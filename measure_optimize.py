@@ -157,7 +157,9 @@ class MeasurementOptimizer:
         :param cost_budget:
         :return:
         """
-        for idx in range(6):
+
+        # construct variables
+        for idx in range():
             cp.Variable(idx, nonneg=True)
 
         p_cons = [cost < budget]
