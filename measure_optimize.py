@@ -2,6 +2,7 @@
 Measurement optimization tool 
 @University of Notre Dame
 """
+from logging import warning
 import numpy as np
 import pandas as pd
 import cvxpy as cp
@@ -17,7 +18,10 @@ class MeasurementOptimizer:
         :param no_measure: No. of measurement items
         :param no_t: No. of time points. Note: this number should be the same for all measurement items
         :param cost: A list, containing the cost of each timepoint of corresponding measurement
-        :param error_cov: A list of lists, containing the variance-covariance matrix of all measurements
+        :param error_cov: 
+            If it is a list of lists of shape (Nm*Nt)*(Nm*Nt), containing the variance-covariance matrix of all measurements
+            If it is a list of lists of shape Nm*Nm, it will be duplicated for every timepoint
+            If it is an Nm*1 vector, these are variances, and covariances are 0. 
             If None, the default error variance-covariance matrix contains 1 for all variances, and 0 for all covariance
             i.e. a diagonal identity matrix
         :param verbose: if print debug sentences
@@ -54,7 +58,24 @@ class MeasurementOptimizer:
 
     def __build_sigma(self, error_cov):
         # check error_cov if there is any
-        if error_cov is not None:
+
+        if not error_cov:
+            # construct identity matrix
+            self.Sigma = np.identity(self.total_no_measure)
+
+            
+        elif len(error_cov) == self.no_measure and type(error_cov[0]) is float:
+
+            self.Sigma = np.identity(self.total_no_measure)
+
+            # get variance
+            for i in range(self.no_measure):
+                for j in range(self.no_t):
+                    self.Sigma[i*self.no_t+j, i*self.no_t+j] = error_cov[i]
+            
+        
+        elif len(error_cov)==self.total_no_measure and len(error_cov[0])==self.total_no_measure:
+
             # check shape
             assert len(error_cov) == self.total_no_measure, "Check error covariance shape!!!"
             assert len(error_cov[0]) == self.total_no_measure, "Check error covariance shape!!!"
@@ -68,9 +89,20 @@ class MeasurementOptimizer:
             # warn user if Sigma is ill-conditioning, set a bar as min(eig) < 10^{-8} or cond>10^6
             if min(np.linalg.eigvals(self.Sigma_array)) < 0.00000001 or np.linalg.cond(self.Sigma_array)>100000:
                 warnings.warn("Careful...Error covariance matrix is ill-conditioning, which can cause problems.")
-        else:
-            # construct identity matrix
+
+            
+        elif len(error_cov)==self.no_measure and len(error_cov[0])==self.no_measure:
+            
             self.Sigma = np.identity(self.total_no_measure)
+            
+            # get matrix
+            for i in range(self.no_measure):
+                for j in range(self.no_t):
+                    # variance
+                    self.Sigma[i*self.no_t+j, i*self.no_t+j] = error_cov[i]
+
+        else:
+            raise warning ('Wrong inputs for error covariance matrix!!!')
 
         self.Sigma_inv = np.linalg.pinv(self.Sigma)
 
@@ -150,7 +182,7 @@ class MeasurementOptimizer:
         print('Min eig:', min(eig), '; log_e(min_eig):', np.log(min(eig)), '; log_10(min_eig):', np.log10(min(eig)))
         print('Cond:', max(eig)/min(eig))
 
-    def continuous_optimization(self, objective='D', cost_budget=100):
+    def continuous_optimization(self, objective='D', budget=100, solver=None):
         """
 
         :param objective:
@@ -158,23 +190,122 @@ class MeasurementOptimizer:
         :return:
         """
 
+        # compute Atomic FIM
+        self.__fim_computation()
+
+        # evaluate fim 
+        def eval_fim(y):
+            fim = sum(y[i,j]*self.fim_collection[i*self.total_no_measure+j] for i in range(self.total_no_measure) for j in range(self.total_no_measure))
+            return fim
+
+        def a_opt(y):
+            fim = eval_fim(y)
+            return cp.trace(fim)
+            
+        def d_opt(y):
+            fim = eval_fim(y)
+            return cp.log_det(fim)
+
+        def e_opt(y):
+            fim = eval_fim(y)
+            return -cp.lambda_min(fim)
+
         # construct variables
-        for idx in range():
-            cp.Variable(idx, nonneg=True)
+        y_matrice = cp.Variable((self.total_no_measure,self.total_no_measure), nonneg=True)
 
-        p_cons = [cost < budget]
+        # cost limit 
+        p_cons = [sum(y_matrice[i,i]*self.cost[i] for i in range(self.total_no_measure)) <= budget]
 
-        #for idx in :
-        #    for t in :
-        #        p_cons += [j<=1]
+        for k in range(self.total_no_measure):
+            for l in range(self.total_no_measure):
+                p_cons += [y_matrice[k,l] <= y_matrice[k,k]]
+                p_cons += [y_matrice[k,l] <= y_matrice[l,l]]
+                p_cons += [y_matrice[k,k] + y_matrice[l,l] -1 <= y_matrice[k,l]]
+                p_cons += [y_matrice.T == y_matrice]
 
-        p_cons += []
 
-        obj = cp.Maximize(objective())
+        if objective == 'D':
+            obj = cp.Maximize(d_opt(y_matrice))
+        elif objective =='E':
+            obj = cp.Maximize(e_opt(y_matrice))
+        else:
+            if self.verbose:
+                print("Use A-optimality (Trace).")
+            obj = cp.Maximize(a_opt(y_matrice))
 
         problem = cp.Problem(obj, p_cons)
 
-        return
+        if not solver:
+            problem.solve(verbose=self.verbose)
+        else:
+            problem.solve(solver=solver, verbose=self.verbose)
+
+        self.__solution_analysis(y_matrice, obj.value)
+            
+
+    def __fim_computation(self):
+        """
+        compute a list of FIM
+        """
+
+        self.fim_collection = []
+
+        for i in range(self.total_no_measure):
+            for j in range(self.total_no_measure):
+                #unit = self.Sigma_inv[i][j]*np.matrix(self.Q[i,:]).T@np.matrix(self.Q[j,:])
+                unit = self.Sigma_inv[i][j]*np.matrix(self.Q[i]).T@np.matrix(self.Q[j])
+                unit_list = [[0]*self.no_param for i in range(self.no_param)]
+
+                for k in range(self.no_param):
+                    for l in range(self.no_param):
+                        unit_list[k][l] = unit[k,l]
+
+                self.fim_collection.append(unit_list)
+
+    def __solution_analysis(self, y_value, obj_value):
+        """
+        """
+
+        ## deal with y solution, round
+        sol = np.zeros((self.total_no_measure,self.total_no_measure))
+
+        for i in range(self.total_no_measure):
+            for j in range(self.total_no_measure):
+                sol[i,j] = y_value[i,j].value
+                
+                if sol[i,j] >0.99:
+                    sol[i,j] = 1
+                    
+                if sol[i,j] <0.01:
+                    sol[i,j] = 0
+        
+        ## test solution 
+        for i in range(self.total_no_measure):
+            for j in range(self.total_no_measure):
+                if abs(sol[i,j]-sol[j,i])>0.01:
+                    print('Covariance between measurements {i_n} and {j_n} has wrong symmetry'.format(i_n=i, j_n=j))
+                    print('Cov 1:' , sol[i,j] , ', Cov 2:' , sol[j,i] + '.')
+                    
+                if abs(sol[i,j]-min(sol[i,i], sol[j,j]))>0.01:
+                    print('Covariance between measurements {i_n} and {j_n} has wrong computation'.format(i_n=i, j_n=j))
+                    print('i weight:', sol[i,i] , ', j weight:', sol[j,j] , '; Cov weight:', sol[i,j])
+
+        ## obj
+
+        print("Objective:", obj_value)
+        
+        solution_choice = []
+        
+        for i in range(self.total_no_measure):
+            solution_choice.append(sol[i,i])
+
+        ## check if obj right
+        print('FIM info verification (The following result is computed by compute_FIM method)')
+        real_FIM = self.compute_FIM(solution_choice)
+
+        
+
+                
 
     def run_grid_search(self, enumerate_indices):
 
