@@ -57,28 +57,28 @@ class MeasurementOptimizer:
         assert len(cost)==no_measure*no_t, "Check costs!!!"
 
     def __build_sigma(self, error_cov):
-        # check error_cov if there is any
-
+        
+        # if getting None: construct an identify matrix
         if not error_cov:
             # construct identity matrix
             self.Sigma = np.identity(self.total_no_measure)
 
-            
+        # if only getting a vector of variance    
         elif len(error_cov) == self.no_measure and type(error_cov[0]) is float:
 
             self.Sigma = np.identity(self.total_no_measure)
+
+            # Check variance 
+            assert (error_cov[i]>0 for i in range(len(error_cov))), "Variances should be positive!!!"
 
             # get variance
             for i in range(self.no_measure):
                 for j in range(self.no_t):
                     self.Sigma[i*self.no_t+j, i*self.no_t+j] = error_cov[i]
             
-        
+        # if getting the most generalized variance matrix
         elif len(error_cov)==self.total_no_measure and len(error_cov[0])==self.total_no_measure:
 
-            # check shape
-            assert len(error_cov) == self.total_no_measure, "Check error covariance shape!!!"
-            assert len(error_cov[0]) == self.total_no_measure, "Check error covariance shape!!!"
             self.Sigma = error_cov
 
             # check if error covariance is PSD
@@ -90,7 +90,7 @@ class MeasurementOptimizer:
             if min(np.linalg.eigvals(self.Sigma_array)) < 0.00000001 or np.linalg.cond(self.Sigma_array)>100000:
                 warnings.warn("Careful...Error covariance matrix is ill-conditioning, which can cause problems.")
 
-            
+        
         elif len(error_cov)==self.no_measure and len(error_cov[0])==self.no_measure:
             
             self.Sigma = np.identity(self.total_no_measure)
@@ -99,7 +99,17 @@ class MeasurementOptimizer:
             for i in range(self.no_measure):
                 for j in range(self.no_t):
                     # variance
-                    self.Sigma[i*self.no_t+j, i*self.no_t+j] = error_cov[i]
+                    self.Sigma[i*self.no_t+j, i*self.no_t+j] = error_cov[i, i]
+                    # covariances
+                    if i < self.no_measure-1: 
+                        for cov_i in range(i+1, self.no_measure):
+                            self.Sigma[i*self.no_t+j, cov_i*self.no_t+j], self.Sigma[i*self.no_t+j, cov_i*self.no_t+j] = error_cov[i, cov_i], error_cov[cov_i, i]
+
+            assert np.all(np.linalg.eigvals(self.Sigma_array)>0), "Error covariance matrix is not positive semi-definite."
+
+            # warn user if Sigma is ill-conditioning, set a bar as min(eig) < 10^{-8} or cond>10^6
+            if min(np.linalg.eigvals(self.Sigma_array)) < 0.00000001 or np.linalg.cond(self.Sigma_array)>100000:
+                warnings.warn("Careful...Error covariance matrix is ill-conditioning, which can cause problems.")
 
         else:
             raise warning ('Wrong inputs for error covariance matrix!!!')
@@ -121,27 +131,14 @@ class MeasurementOptimizer:
         # compute FIM
         FIM = np.zeros((self.no_param, self.no_param))
 
-        for m1 in range(self.no_measure):
-            for m2 in range(self.no_measure):
-                for t1 in range(self.no_t):
-                    for t2 in range(self.no_t):
-                        m1_rank = m1*self.no_t+t1
-                        m2_rank = m2*self.no_t+t2
-                        Q_m1 = np.matrix(self.Q[m1_rank])
-                        Q_m2 = np.matrix(self.Q[m2_rank])
-                        measure_matrix = np.matrix([measurement_matrix[m1_rank,m2_rank]])
-                        sigma = np.matrix([self.Sigma_inv[m1_rank,m2_rank]])
-                        #if self.verbose:
-                        #    print('measurement 1:', m1_rank)
-                        #    print('measurement 2:', m2_rank)
-                        #    print('measurement 1 Q:', Q_m1)
-                        #    print('measurement 2 Q:', Q_m2)
-                        #    print('is this chosen? :', measure_matrix)
-                        #    print('variance/covariance:', sigma)
-                        FIM_unit = Q_m1.T@measure_matrix@sigma@Q_m2
-                        #if self.verbose:
-                        #    print('FIM unit for the two measurements: ', FIM_unit)
-                        FIM += FIM_unit
+        for m1_rank in range(self.total_no_measure):
+            for m2_rank in range(self.total_no_measure):
+                Q_m1 = np.matrix(self.Q[m1_rank])
+                Q_m2 = np.matrix(self.Q[m2_rank])
+                measure_matrix = np.matrix([measurement_matrix[m1_rank,m2_rank]])
+                sigma = np.matrix([self.Sigma_inv[m1_rank,m2_rank]])
+                FIM_unit = Q_m1.T@measure_matrix@sigma@Q_m2
+                FIM += FIM_unit
         # FIM read
         if self.verbose:
             self.__print_FIM(FIM)
@@ -151,8 +148,8 @@ class MeasurementOptimizer:
     def __measure_matrix(self, measurement_vector):
         """
 
-        :param measurement_vector:
-        :return:
+        :param measurement_vector: a vector of measurement weights solution
+        :return: a full measurement matrix, construct the weights for covariances
         """
         # check if measurement vector legal
         assert len(measurement_vector)==self.total_no_measure, "Measurement vector is of wrong shape!!!"
@@ -168,8 +165,8 @@ class MeasurementOptimizer:
     def __print_FIM(self, FIM):
         """
 
-        :param FIM:
-        :return:
+        :param FIM: FIM matrix
+        :return: print result analysis
         """
 
         det = np.linalg.det(FIM)
@@ -185,8 +182,9 @@ class MeasurementOptimizer:
     def continuous_optimization(self, objective='D', budget=100, solver=None):
         """
 
-        :param objective:
-        :param cost_budget:
+        :param objective: can choose from 'D', 'A', 'E' for now. if defined others or None, use A-optimality.
+        :param cost_budget: give a total limit for costs.
+        :param solver: default to be MOSEK. Look for CVXPY document for more solver information.
         :return:
         """
 
@@ -216,11 +214,12 @@ class MeasurementOptimizer:
         # cost limit 
         p_cons = [sum(y_matrice[i,i]*self.cost[i] for i in range(self.total_no_measure)) <= budget]
 
+        # constraints
         for k in range(self.total_no_measure):
             for l in range(self.total_no_measure):
                 p_cons += [y_matrice[k,l] <= y_matrice[k,k]]
                 p_cons += [y_matrice[k,l] <= y_matrice[l,l]]
-                p_cons += [y_matrice[k,k] + y_matrice[l,l] -1 <= y_matrice[k,l]]
+                p_cons += [y_matrice[k,k] + y_matrice[l,l] -1 <= y_matrice[k,l]] 
                 p_cons += [y_matrice.T == y_matrice]
 
 
@@ -229,6 +228,7 @@ class MeasurementOptimizer:
         elif objective =='E':
             obj = cp.Maximize(e_opt(y_matrice))
         else:
+            # 
             if self.verbose:
                 print("Use A-optimality (Trace).")
             obj = cp.Maximize(a_opt(y_matrice))
@@ -245,14 +245,13 @@ class MeasurementOptimizer:
 
     def __fim_computation(self):
         """
-        compute a list of FIM
+        compute a list of FIM. 
         """
 
         self.fim_collection = []
 
         for i in range(self.total_no_measure):
             for j in range(self.total_no_measure):
-                #unit = self.Sigma_inv[i][j]*np.matrix(self.Q[i,:]).T@np.matrix(self.Q[j,:])
                 unit = self.Sigma_inv[i][j]*np.matrix(self.Q[i]).T@np.matrix(self.Q[j])
                 unit_list = [[0]*self.no_param for i in range(self.no_param)]
 
@@ -264,11 +263,16 @@ class MeasurementOptimizer:
 
     def __solution_analysis(self, y_value, obj_value):
         """
+        Analyze solution. Rounded solutions, test if they meet constraints, and print information about the solution.
+
+        :param y_value: cvxpy problem output y 
+        :param obj_value: cvxopy problem output objective function value
         """
 
         ## deal with y solution, round
         sol = np.zeros((self.total_no_measure,self.total_no_measure))
 
+        # get all solution value. If a solution is larger than 0.99, round it to 1. if it is smaller than 0.01, floor it to 0.
         for i in range(self.total_no_measure):
             for j in range(self.total_no_measure):
                 sol[i,j] = y_value[i,j].value
