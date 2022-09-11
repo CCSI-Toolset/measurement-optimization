@@ -59,7 +59,7 @@ class MeasurementOptimizer:
     def __build_sigma(self, error_cov):
         
         # if getting None: construct an identify matrix
-        if not error_cov:
+        if error_cov is None:
             # construct identity matrix
             self.Sigma = np.identity(self.total_no_measure)
 
