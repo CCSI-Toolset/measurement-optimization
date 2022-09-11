@@ -236,9 +236,9 @@ class MeasurementOptimizer:
         problem = cp.Problem(obj, p_cons)
 
         if not solver:
-            problem.solve(verbose=self.verbose)
+            problem.solve(verbose=True)
         else:
-            problem.solve(solver=solver, verbose=self.verbose)
+            problem.solve(solver=solver, verbose=True)
 
         self.__solution_analysis(y_matrice, obj.value)
             
