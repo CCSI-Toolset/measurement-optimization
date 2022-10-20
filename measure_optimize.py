@@ -5,7 +5,7 @@ Measurement optimization tool
 from logging import warning
 import numpy as np
 import pandas as pd
-import cvxpy as cp
+#import cvxpy as cp
 import warnings
 
 class MeasurementOptimizer:
@@ -189,7 +189,7 @@ class MeasurementOptimizer:
         """
 
         # compute Atomic FIM
-        self.__fim_computation()
+        self.fim_computation()
 
         # evaluate fim 
         def eval_fim(y):
@@ -243,7 +243,7 @@ class MeasurementOptimizer:
         self.__solution_analysis(y_matrice, obj.value)
             
 
-    def __fim_computation(self):
+    def fim_computation(self):
         """
         compute a list of FIM. 
         """
