@@ -5,16 +5,11 @@ Measurement optimization tool
 from logging import warning
 import numpy as np
 import pandas as pd
-import pyomo.environ as pyo
 #import cvxpy as cp
 import warnings
-from greybox_generalize import LogDetModel
-from scipy.sparse import coo_matrix
-from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel
-from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxBlock
 
 class MeasurementOptimizer:
-    def __init__(self, static_Q, dynamic_Q, static_Nt, dynamic_Nt, num_param, error_cov=None, verbose=True):
+    def __init__(self, Q, no_measure, no_t, cost, error_cov=None, verbose=True):
         """
         Argument
         --------
@@ -22,6 +17,7 @@ class MeasurementOptimizer:
             Note: Q should be stacked in a way where time points of one measurement are neighbours. For e.g., [CA(t1), ..., CA(tN), CB(t1), ...]
         :param no_measure: No. of measurement items
         :param no_t: No. of time points. Note: this number should be the same for all measurement items
+        :param cost: A list, containing the cost of each timepoint of corresponding measurement
         :param error_cov: 
             If it is a list of lists of shape (Nm*Nt)*(Nm*Nt), containing the variance-covariance matrix of all measurements
             If it is a list of lists of shape Nm*Nm, it will be duplicated for every timepoint
@@ -30,31 +26,18 @@ class MeasurementOptimizer:
             i.e. a diagonal identity matrix
         :param verbose: if print debug sentences
         """
-        #self.static_Q = static_Q
-        self.num_static = len(static_Q)
-
-        #self.dynamic_Q = dynamic_Q
-        self.num_dynamic = len(dynamic_Q)
-
-        self.total_no_measure = self.num_static + self.num_dynamic
-
-        self.static_Nt = static_Nt
-        self.dynamic_Nt = dynamic_Nt
-
-        self.num_param = num_param
+        self.Q = Q
+        self.no_measure = no_measure
+        self.no_t = no_t
+        self.cost = cost
         self.verbose = verbose
 
-        self.Q = []
-        for i in range(self.num_static):
-            self.Q.append(static_Q[i])
-        for j in range(self.num_dynamic):
-            self.Q.append(dynamic_Q[j])
-
         # check the shape of every input, make sure they are consistent
-        #self.__check(Q, no_measure, no_t, cost, error_cov)
+        self.__check(Q, no_measure, no_t, cost, error_cov)
 
         # build and check PSD of Sigma
-        self.__build_sigma(error_cov)
+        self.sigma = self.__build_sigma(error_cov)
+
 
     def __check(self, Q, no_measure, no_t, cost, error_cov):
         """
@@ -74,56 +57,68 @@ class MeasurementOptimizer:
         assert len(cost)==no_measure*no_t, "Check costs!!!"
 
     def __build_sigma(self, error_cov):
-
-        self.Sigma_inv = {}
         
         # if getting None: construct an identify matrix
         if error_cov is None:
             # construct identity matrix
-            for i in range(self.num_static):
-                for j in range(i, self.num_static):
-                    self.Sigma_inv[(i,j)] = self.Sigma_inv[(j,i)] = np.identity(self.static_Nt)
+            self.Sigma = np.identity(self.total_no_measure)
 
-            for i in range(self.num_static):
-                for j in range(self.num_static, self.total_no_measure):
-                    sigma = np.zeros((self.static_Nt, 1))
+        # if only getting a vector of variance    
+        elif len(error_cov) == self.no_measure and type(error_cov[0]) is float:
 
-                    self.Sigma_inv[(i,j)] = self.Sigma_inv[(j,i)] = sigma 
+            self.Sigma = np.identity(self.total_no_measure)
 
-            for i in range(self.num_static, self.total_no_measure):
-                for j in range(self.num_static, self.total_no_measure):
-                    if i==j:
-                        self.Sigma_inv[(i,j)] = 1 
-                    else:
-                        self.Sigma_inv[(i,j)] = 0
+            # Check variance 
+            assert (error_cov[i]>0 for i in range(len(error_cov))), "Variances should be positive!!!"
+
+            # get variance
+            for i in range(self.no_measure):
+                for j in range(self.no_t):
+                    self.Sigma[i*self.no_t+j, i*self.no_t+j] = error_cov[i]
+            
+        # if getting the most generalized variance matrix
+        elif len(error_cov)==self.total_no_measure and len(error_cov[0])==self.total_no_measure:
+
+            self.Sigma = error_cov
+
+            # check if error covariance is PSD
+            self.Sigma_array = np.asarray(self.Sigma)
+
+            assert np.all(np.linalg.eigvals(self.Sigma_array)>0), "Error covariance matrix is not positive semi-definite."
+
+            # warn user if Sigma is ill-conditioning, set a bar as min(eig) < 10^{-8} or cond>10^6
+            if min(np.linalg.eigvals(self.Sigma_array)) < 0.00000001 or np.linalg.cond(self.Sigma_array)>100000:
+                warnings.warn("Careful...Error covariance matrix is ill-conditioning, which can cause problems.")
 
         
-    def fim_computation(self):
-        """
-        compute a list of FIM. 
-        """
+        elif len(error_cov)==self.no_measure and len(error_cov[0])==self.no_measure:
+            
+            self.Sigma = np.identity(self.total_no_measure)
+            
+            # get matrix
+            for i in range(self.no_measure):
+                for j in range(self.no_t):
+                    # variance
+                    self.Sigma[i*self.no_t+j, i*self.no_t+j] = error_cov[i, i]
+                    # covariances
+                    if i < self.no_measure-1: 
+                        for cov_i in range(i+1, self.no_measure):
+                            self.Sigma[i*self.no_t+j, cov_i*self.no_t+j], self.Sigma[i*self.no_t+j, cov_i*self.no_t+j] = error_cov[i, cov_i], error_cov[cov_i, i]
 
-        self.fim_collection = []
+            assert np.all(np.linalg.eigvals(self.Sigma_array)>0), "Error covariance matrix is not positive semi-definite."
 
-        for i in range(self.total_no_measure):
-            for j in range(self.total_no_measure):
-                if i < self.num_static and j < self.num_static:
-                    unit = np.asarray(self.Q[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.Q[j])
-                    
-                elif i<self.num_static and j>=self.num_static:
-                    unit = np.asarray(self.Q[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.Q[j]).reshape(1,self.num_param)
+            # warn user if Sigma is ill-conditioning, set a bar as min(eig) < 10^{-8} or cond>10^6
+            if min(np.linalg.eigvals(self.Sigma_array)) < 0.00000001 or np.linalg.cond(self.Sigma_array)>100000:
+                warnings.warn("Careful...Error covariance matrix is ill-conditioning, which can cause problems.")
 
-                elif i>=self.num_static and j<self.num_static:
-                    unit = np.asarray(self.Q[i]).reshape(1, self.num_param).T@self.Sigma_inv[(i,j)].T@np.asarray(self.Q[j])
+        else:
+            raise warning ('Wrong inputs for error covariance matrix!!!')
 
-                else:
-                    unit = self.Sigma_inv[(i,j)]*np.asarray(self.Q[i]).reshape(1, self.num_param).T@np.asarray(self.Q[j]).reshape(1,self.num_param)
-
-                self.fim_collection.append(unit.tolist())
+        self.Sigma_inv = np.linalg.pinv(self.Sigma)
 
     def compute_FIM(self, measurement_vector):
         """
-        Compute a total FIM given a set of measurements
+        Compute FIM given a set of measurements
 
         :param measurement_vector: a list of the length of all measurements, each element in [0,1]
             0 indicates this measurement is not selected, 1 indicates selected
@@ -184,161 +179,7 @@ class MeasurementOptimizer:
         print('Min eig:', min(eig), '; log_e(min_eig):', np.log(min(eig)), '; log_10(min_eig):', np.log10(min(eig)))
         print('Cond:', max(eig)/min(eig))
 
-    def continuous_optimization(self, cost_list, mixed_integer=False, obj="A", num_fixed=9, 
-                                fix=False, sparse=False, init_cov_y=None, init_fim=None,
-                                manual_number=20, budget=100):
-        
-        """Continuous optimization problem formulation. 
-
-        Parameter
-        ---------
-        :param cost_list: A list, containing the cost of each timepoint of corresponding measurement
-        """
-
-        m = pyo.ConcreteModel()
-
-        # response set
-        m.NumRes = pyo.Set(initialize=range(self.total_no_measure))
-        # FIM set 
-        m.DimFIM = pyo.Set(initialize=range(self.num_param))
-
-        # initialize with identity
-        def identity(m,a,b):
-            return 1 if a==b else 0 
-        def initialize_point(m,a,b):
-            return init_cov_y[a][b]
-        
-        if init_cov_y:
-            initialize=initialize_point
-        else:
-            initialize=identity
-        
-        if mixed_integer:
-            m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, within=pyo.Binary)
-        else:
-            m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
-        
-        if fix:
-            m.cov_y.fix()
-
-        def init_fim(m,p,q):
-            return init_fim[p,q]
-        
-        m.TotalFIM = pyo.Var(m.DimFIM, m.DimFIM, initialize=identity)
-
-        # other variables
-
-        ### compute FIM 
-        def eval_fim(m, a, b):
-            if a >= b: 
-                summi = 0 
-                for i in m.NumRes:
-                    for j in m.NumRes:
-                        if i>j:
-                            summi += m.cov_y[i,j]*self.fim_collection[i*self.total_no_measure+j][a][b]
-                        else:
-                            summi += m.cov_y[j,i]*self.fim_collection[i*self.total_no_measure+j][a][b]
-                return m.TotalFIM[a,b] == summi
-            else:
-                return m.TotalFIM[a,b] == m.TotalFIM[b,a]
-            
-        ### cov_y constraints
-        def y_covy1(m, a, b):
-            if a > b:
-                return m.cov_y[a, b] <= m.cov_y[a, a]
-            else:
-                return pyo.Constraint.Skip
-            
-        def y_covy2(m, a, b):
-            if a > b:
-                return m.cov_y[a, b] <= m.cov_y[b, b]
-            else:
-                return pyo.Constraint.Skip
-            
-        def y_covy3(m, a, b):
-            if a>b:
-                return m.cov_y[a, b] >= m.cov_y[a, a] + m.cov_y[b, b] - 1
-            else:
-                return pyo.Constraint.Skip
-            
-        def symmetry(m,a,b):
-            if a<b:
-                return m.cov_y[a,b] == m.cov_y[b,a]
-            else:
-                return pyo.Constraint.Skip
-
-        ### cost constraints
-        def cost_compute(m):
-            return m.cost == sum(m.cov_y[i,i]*cost_list[i] for i in m.NumRes)
-        
-        def cost_limit(m):
-            return m.cost <= budget
-        
-        def total_dynamic(m):
-            return m.TotalDynamic==sum(m.cov_y[i,i] for i in range(num_fixed, self.total_no_measure))
-        
-        def total_dynamic_con(m):
-            return m.TotalDynamic<=manual_number
-        
-        # set up Design criterion
-        def ComputeTrace(m):
-            sum_x = sum(m.TotalFIM[j,j] for j in m.DimFIM)
-            return sum_x
-
-        ### add constraints
-        m.TotalFIM_con = pyo.Constraint(m.DimFIM, m.DimFIM, rule=eval_fim)
-
-        if mixed_integer and not fix:
-            m.sym = pyo.Constraint(m.NumRes, m.NumRes, rule=symmetry)
-        
-        if not fix:
-            if not sparse:
-                m.cov1 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy1)
-                m.cov2 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy2)
-                m.cov3 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy3)
-                
-            else: 
-                m.cov1_sparse = pyo.Constraint(m.NumRes_half, rule=y_covy1)
-                m.cov2_sparse = pyo.Constraint(m.NumRes_half, rule=y_covy2)
-                m.cov3_sparse = pyo.Constraint(m.NumRes_half, rule=y_covy3)
-                
-
-            m.TotalDynamic = pyo.Var(initialize=1) # total # of human measurements
-            m.con_manual = pyo.Constraint(rule=total_dynamic_con)
-            m.cost = pyo.Var(initialize=budget)
-            m.cost_compute = pyo.Constraint(rule=cost_compute)
-            m.budget_limit = pyo.Constraint(rule=cost_limit)
-
-        # set objective 
-        if obj == "A":
-            m.Obj = pyo.Objective(rule=ComputeTrace, sense=pyo.maximize)
-
-        elif obj == "D":
-
-            def _model_i(b):
-                self.build_model_external(b)
-            m.my_block = pyo.Block(rule=_model_i)
-
-            for i in range(self.num_param):
-                for j in range(i, self.num_param):
-                    def eq_fim(m):
-                        return m.TotalFIM[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
-                    
-                    con_name = "con"+str(i)+str(j)
-                    m.add_component(con_name, pyo.Constraint(expr=eq_fim))
-
-            # add objective
-            m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
-
-        return m 
-
-
-    def build_model_external(self, m):
-        ex_model = LogDetModel(num_para=5)
-        m.egb = ExternalGreyBoxBlock()
-        m.egb.set_external_model(ex_model)
-
-    def continuous_optimization_cvxpy(self, objective='D', budget=100, solver=None):
+    def continuous_optimization(self, objective='D', budget=100, solver=None):
         """
 
         :param objective: can choose from 'D', 'A', 'E' for now. if defined others or None, use A-optimality.
@@ -402,7 +243,23 @@ class MeasurementOptimizer:
         self.__solution_analysis(y_matrice, obj.value)
             
 
-    
+    def fim_computation(self):
+        """
+        compute a list of FIM. 
+        """
+
+        self.fim_collection = []
+
+        for i in range(self.total_no_measure):
+            for j in range(self.total_no_measure):
+                unit = self.Sigma_inv[i][j]*np.matrix(self.Q[i]).T@np.matrix(self.Q[j])
+                unit_list = [[0]*self.no_param for i in range(self.no_param)]
+
+                for k in range(self.no_param):
+                    for l in range(self.no_param):
+                        unit_list[k][l] = unit[k,l]
+
+                self.fim_collection.append(unit_list)
 
     def __solution_analysis(self, y_value, obj_value):
         """
@@ -463,7 +320,6 @@ class DataProcess:
         return 
 
     def read_jaco(self, filename):
-
         jaco_info = pd.read_csv(filename, index_col=False)
         jaco_list = np.asarray(jaco_info)
 
@@ -474,15 +330,24 @@ class DataProcess:
 
         print("jacobian shape:", np.shape(jaco))
 
-        return jaco
+        self.jaco = jaco
 
-    def split_jaco(self, jaco, idx, num_t):
+    def _static_jaco(self, idx, num_t):
         """Split Jacobian 
         idx: idx of static measurements 
         """
-        jaco_idx = jaco[idx*num_t:(idx+1)*num_t][:]
+        jaco_idx = self.jaco[idx*num_t:(idx+1)*num_t][:]
+        jaco_idx = np.asarray(jaco_idx)
         return jaco_idx 
 
+    def fim_assemble(self,idx_list,num_t):
+
+        for ind in idx_list:
+            jaco_idx = self._static_jaco(ind, num_t)
+
+    
+    def dynamic_fim(self,idx_list,num_t):
+        return 
 
     
 
