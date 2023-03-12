@@ -52,14 +52,20 @@ class MeasurementOptimizer:
         :param dynamic_idx: a list of dynamic-cost measurements index 
         :param num_param: No. of parameters
         :param error_cov: 
-            If it is a list of lists of shape (Nm*Nt)*(Nm*Nt), containing the variance-covariance matrix of all measurements
-            If it is a list of lists of shape Nm*Nm, it will be duplicated for every timepoint
-            If it is an Nm*1 vector, these are variances, and covariances are 0. 
-            If None, the default error variance-covariance matrix contains 1 for all variances, and 0 for all covariance
-            i.e. a diagonal identity matrix
-        :param: error_opt;
-            1: variances given
-            2: 
+            defined error covariance matrix here
+            if None: error covariance matrix is an identity matrix
+            if error_opt==1: a list, each element is the corresponding variance, a.k.a. diagonal elements.
+                Shape: Sum(Nt) 
+            if error_opt==2: a list of lists, each element is the error covariances
+                This option assumes covariances not between measurements, but between timepoints for one measurement
+                Shape: Nm * (Nt_m * Nt_m)
+            if error_opt==3: a list of list, covariance matrix for a single time steps 
+                This option assumes the covariances between measurements at the same timestep in a time-invariant way 
+                Shape: Nm * Nm
+            if error_opt==4: a list of list, covariance matrix for the flattened measurements 
+                Shape: sum(Nt) * sum(Nt) 
+        :param: error_opt:
+            can choose from None, 1, 2, 3, 4. See above comments.
         :param verbose: if print debug sentences
         """
         # # of static and dynamic measurements
@@ -71,10 +77,11 @@ class MeasurementOptimizer:
         assert self.num_measure==self.num_dynamic+self.num_static
 
         # measurements can have different # of timepoints
+        # Nt key: measurement index, value: # of timepoints for this measure
         self.Nt = {}
         for i in range(self.num_measure):
             self.Nt[i] = len(Q[i])
-        # total number of measurement and time points
+        # total number of all measurements and all time points
         self.total_num_time = sum(self.Nt.values())
 
         self.num_param = num_param
@@ -97,29 +104,38 @@ class MeasurementOptimizer:
         Flatten matrix: flatten dynamic-cost and static-cost measuremenets
         """
 
-        ### flatten to be cov matrix 
+        ### dynamic_flatten: to be decision matrix 
         Q_dynamic_flatten = []
+        # position index in Q_dynamic_flatten where each measurement starts
         self.head_pos_dynamic_flatten = {}
+        # all static measurements index after dynamic_flattening
         self.static_idx_dynamic_flatten = []
         self.dynamic_idx_dynamic_flatten = []
 
+        ### flatten: flatten all measurement all costs 
         Q_flatten = []
+        # position index in Q_flatten where each measurement starts
         self.head_pos_flatten = {}
+        # all static measurements index after flatten
         self.static_idx_flatten = []
+        # all dynamic measurements index after flatten
         self.dynamic_idx_flatten = []
 
+        # map dynamic index to flatten index 
+        # key: dynamic index, value: corresponding indexes in flatten matrix. For static, it's a list. For dynamic, it's a index value
         self.dynamic_to_flatten = {}
 
+        # counter for dynamic_flatten
         count1 = 0
+        # counter for flatten
         count2 = 0
         for i in range(self.num_measure):
-            if i in self.static_idx:
+            if i in self.static_idx: # static measurements are not flattened for dynamic flatten
                 # dynamic_flatten
                 Q_dynamic_flatten.append(Q[i])
-                #print(np.shape(Q[i]))
                 self.head_pos_dynamic_flatten[i] = count1 
                 self.static_idx_dynamic_flatten.append(count1)
-                self.dynamic_to_flatten[count1] = []
+                self.dynamic_to_flatten[count1] = [] # static measurement's dynamic_flatten index corresponds to a list of flattened index
 
                 # flatten 
                 for t in range(len(Q[i])):
@@ -127,16 +143,16 @@ class MeasurementOptimizer:
                     if t==0:
                         self.head_pos_flatten[i] = count2
                     self.static_idx_flatten.append(count2)
-                    # map
+                    # map all timepoints to the dynamic_flatten static index
                     self.dynamic_to_flatten[count1].append(count2)
                     count2 += 1 
 
                 count1 += 1 
 
             else:
+                # dynamic measurements are flattend for both dynamic_flatten and flatten
                 for t in range(len(Q[i])):
                     Q_dynamic_flatten.append(Q[i][t])
-                    #print(np.shape(Q[i][t]))
                     if t==0:
                         self.head_pos_dynamic_flatten[i] = count1
                     self.dynamic_idx_dynamic_flatten.append(count1) 
@@ -152,33 +168,10 @@ class MeasurementOptimizer:
 
         self.Q_dynamic_flatten = Q_dynamic_flatten 
         self.Q_flatten = Q_flatten
+        # dimension after dynamic_flatten
         self.num_measure_dynamic_flatten = len(self.static_idx_dynamic_flatten)+len(self.dynamic_idx_dynamic_flatten)
+        # dimension after flatten
         self.num_measure_flatten = len(self.static_idx_flatten) + len(self.dynamic_idx_flatten)
-
-    def _flatten(self, Q):
-        """Update cov matrix and flattened matrix index. 
-        Not used any more. Merged to _dynamic_flatten. 
-        """
-
-        ### flatten to be cov matrix 
-        Q_flatten = []
-        self.head_pos_flatten = {}
-        self.static_idx_flatten = []
-        self.dynamic_idx_flatten = []
-
-        count = 0
-        for i in self.num_measure:
-            for t in range(len(Q[i])):
-                Q_flatten.append(Q[i][t])
-                if t==0:
-                    self.head_pos_flatten[i] = count 
-                if i in self.static_idx:
-                    self.static_idx_flatten.append(count)
-                else:
-                    self.dynamic_idx_flatten.append(count)
-                count += 1 
-
-        self.Q_flatten = Q_flatten 
 
     def _build_sigma(self, error_cov, error_option):
         """Build error covariance matrix 
@@ -201,6 +194,7 @@ class MeasurementOptimizer:
         if (not error_cov) or (error_option==1):
             if not error_cov:
                 error_cov = [1]*self.total_num_time
+            # loop over diagonal elements and change
             for i in range(self.total_num_time):
                 Sigma[i,i] = error_cov[i]
 
@@ -208,6 +202,7 @@ class MeasurementOptimizer:
             for i in range(self.num_measure):
                 # give the error covariance to Sigma 
                 sigma_i_start = self.head_pos_flatten[i]
+                # loop over all timepoints for measurement i 
                 for t1 in range(self.Nt[i]):
                     for t2 in range(self.Nt[i]):
                         Sigma[sigma_i_start+t1, sigma_i_start+t2] = error_cov[i][t1][t2]
@@ -220,7 +215,7 @@ class MeasurementOptimizer:
                     head_j = self.head_pos_flatten[j]
                     # i, j may have different timesteps
                     for t in range(min(self.Nt[i], self.Nt[j])):
-                        Sigma[t+head_i, t+head_j] = cov_ij
+                        Sigma[t+head_i, t+head_j] = cov_ij 
      
         elif error_option == 4:
             Sigma = np.asarray(error_cov)
@@ -278,51 +273,23 @@ class MeasurementOptimizer:
 
         for i in range(self.num_measure_dynamic_flatten):
             for j in range(self.num_measure_dynamic_flatten):
+                # static*static
                 if i in self.static_idx_dynamic_flatten and j in self.static_idx_dynamic_flatten:
                     unit = np.asarray(self.Q_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.Q_dynamic_flatten[j])
                     
+                # static*dynamic
                 elif i in self.static_idx_dynamic_flatten and j in self.dynamic_idx_dynamic_flatten:
                     unit = np.asarray(self.Q_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.Q_dynamic_flatten[j]).reshape(1,self.num_param)
 
+                # static*dynamic
                 elif i in self.dynamic_idx_dynamic_flatten and j in self.static_idx_dynamic_flatten:
-                    print(np.asarray(self.Q_dynamic_flatten[i]).reshape(1, self.num_param))
-                    print(i,j)
-                    print(np.asarray(self.Q_dynamic_flatten[j]))
                     unit = np.asarray(self.Q_dynamic_flatten[i]).reshape(1, self.num_param).T@self.Sigma_inv[(i,j)].T@np.asarray(self.Q_dynamic_flatten[j])
 
+                # dynamic*dynamic
                 else:
                     unit = self.Sigma_inv[(i,j)]*np.asarray(self.Q_dynamic_flatten[i]).reshape(1, self.num_param).T@np.asarray(self.Q_dynamic_flatten[j]).reshape(1,self.num_param)
 
                 self.fim_collection.append(unit.tolist())
-
-    def compute_FIM(self, measurement_vector):
-        """
-        Compute a total FIM given a set of measurements
-
-        :param measurement_vector: a list of the length of all measurements, each element in [0,1]
-            0 indicates this measurement is not selected, 1 indicates selected
-            Note: Ensure the order of this list is the same as the order of Q, i.e. [CA(t1), ..., CA(tN), CB(t1), ...]
-        :return:
-        """
-        # generate measurement matrix
-        measurement_matrix = self.__measure_matrix(measurement_vector)
-
-        # compute FIM
-        FIM = np.zeros((self.no_param, self.no_param))
-
-        for m1_rank in range(self.total_no_measure):
-            for m2_rank in range(self.total_no_measure):
-                Q_m1 = np.matrix(self.Q[m1_rank])
-                Q_m2 = np.matrix(self.Q[m2_rank])
-                measure_matrix = np.matrix([measurement_matrix[m1_rank,m2_rank]])
-                sigma = np.matrix([self.Sigma_inv[m1_rank,m2_rank]])
-                FIM_unit = Q_m1.T@measure_matrix@sigma@Q_m2
-                FIM += FIM_unit
-        # FIM read
-        if self.verbose:
-            self.__print_FIM(FIM)
-
-        return FIM
 
     def __measure_matrix(self, measurement_vector):
         """
@@ -343,7 +310,7 @@ class MeasurementOptimizer:
 
     def __print_FIM(self, FIM):
         """
-
+        Analyze one given FIM
         :param FIM: FIM matrix
         :return: print result analysis
         """
@@ -359,7 +326,7 @@ class MeasurementOptimizer:
         print('Cond:', max(eig)/min(eig))
 
     def continuous_optimization(self, cost_list, mixed_integer=False, obj="A", num_fixed=9, 
-                                fix=False, sparse=False, init_cov_y=None, init_fim=None,
+                                fix=False, sparse=False, init_cov_y=None, initial_fim=None,
                                 manual_number=20, budget=100):
         
         """Continuous optimization problem formulation. 
@@ -367,12 +334,21 @@ class MeasurementOptimizer:
         Parameter
         ---------
         :param cost_list: A list, containing the cost of each timepoint of corresponding measurement
+        :param mixed_integer: not relaxing integer decisions
+        :param obj: "A" or "D" optimality, use trace or determinant of FIM 
+        :param num_fixed: number of static-cost measurements 
+        :param fix: if solving as a square problem or with DOFs 
+        :param sparse: if using sparse set to define decisions and FIM, or not 
+        :param init_cov_y: initialize decision variables 
+        :param initial_fim: initialize FIM
+        :param manual_number: the maximum number of human measurements for dynamic measurements
+        :param budget: total budget
         """
 
         m = pyo.ConcreteModel()
 
         # response set
-        m.NumRes = pyo.Set(initialize=range(self.num_measure))
+        m.NumRes = pyo.Set(initialize=range(self.num_measure_dynamic_flatten))
         # FIM set 
         m.DimFIM = pyo.Set(initialize=range(self.num_param))
 
@@ -386,29 +362,50 @@ class MeasurementOptimizer:
             initialize=initialize_point
         else:
             initialize=identity
+
+        # sparse NumRes
+        def NumReshalf_init(m):
+            return ((a,b) for a in m.NumRes for b in range(a, self.num_measure_dynamic_flatten))
         
+        def DimFIMhalf_init(m):
+            return ((a,b) for a in m.DimFIM for b in range(a, self.num_param))
+        
+        m.NumRes_half = pyo.Set(dimen=2, initialize=NumReshalf_init)
+        m.DimFIM_half = pyo.Set(dimen=2, initialize=DimFIMhalf_init)
+        
+        # decision variables
         if mixed_integer:
-            m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, within=pyo.Binary)
+            if sparse:
+                m.cov_y = pyo.Var(m.NumRes_half, initialize=initialize, bounds=(0,1), within=pyo.Binary)
+            else:
+                m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, bounds=(0,1), within=pyo.Binary)
         else:
-            m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
+            if sparse:
+                m.cov_y = pyo.Var(m.NumRes_half, initialize=initialize, bounds=(0.01,1), within=pyo.NonNegativeReals)
+            else:
+                m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, bounds=(0.01,1), within=pyo.NonNegativeReals)
         
         if fix:
             m.cov_y.fix()
 
         def init_fim(m,p,q):
-            return init_fim[p,q]
+            return initial_fim[p,q]
         
-        m.TotalFIM = pyo.Var(m.DimFIM, m.DimFIM, initialize=identity)
-
-        # other variables
+        if sparse:
+            m.TotalFIM = pyo.Var(m.DimFIM_half, initialize=init_fim)
+        else:
+            m.TotalFIM = pyo.Var(m.DimFIM, m.DimFIM, initialize=init_fim)
 
         ### compute FIM 
         def eval_fim(m, a, b):
-            if a >= b: 
+            """
+            Initialize FIM
+            """
+            if a <= b: 
                 summi = 0 
                 for i in m.NumRes:
                     for j in m.NumRes:
-                        if i>j:
+                        if j>=i:
                             summi += m.cov_y[i,j]*self.fim_collection[i*self.num_measure+j][a][b]
                         else:
                             summi += m.cov_y[j,i]*self.fim_collection[i*self.num_measure+j][a][b]
@@ -416,21 +413,28 @@ class MeasurementOptimizer:
             else:
                 return m.TotalFIM[a,b] == m.TotalFIM[b,a]
             
+        m.TotalDynamic = pyo.Var(initialize=1)
+    
+        def total_dynamic(m):
+            return m.TotalDynamic==sum(m.cov_y[i,i] for i in range(num_fixed, self.num_measure_dynamic_flatten))
+        
+        m.manual = pyo.Constraint(rule=total_dynamic)
+            
         ### cov_y constraints
         def y_covy1(m, a, b):
-            if a > b:
+            if b > a:
                 return m.cov_y[a, b] <= m.cov_y[a, a]
             else:
                 return pyo.Constraint.Skip
             
         def y_covy2(m, a, b):
-            if a > b:
+            if b > a:
                 return m.cov_y[a, b] <= m.cov_y[b, b]
             else:
                 return pyo.Constraint.Skip
             
         def y_covy3(m, a, b):
-            if a>b:
+            if b > a:
                 return m.cov_y[a, b] >= m.cov_y[a, a] + m.cov_y[b, b] - 1
             else:
                 return pyo.Constraint.Skip
@@ -459,26 +463,23 @@ class MeasurementOptimizer:
             sum_x = sum(m.TotalFIM[j,j] for j in m.DimFIM)
             return sum_x
 
-        ### add constraints
-        m.TotalFIM_con = pyo.Constraint(m.DimFIM, m.DimFIM, rule=eval_fim)
-
-        if mixed_integer and not fix:
-            m.sym = pyo.Constraint(m.NumRes, m.NumRes, rule=symmetry)
+        # add constraints
+        if sparse:
+            m.TotalFIM_con = pyo.Constraint(m.DimFIM_half, rule=eval_fim)
+        else:
+            m.TotalFIM_con = pyo.Constraint(m.DimFIM, m.DimFIM, rule=eval_fim)
         
         if not fix:
-            if not sparse:
-                m.cov1 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy1)
-                m.cov2 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy2)
-                m.cov3 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy3)
+        
+            if mixed_integer and not sparse:
+                m.sym = pyo.Constraint(m.NumRes, m.NumRes, rule=symmetry)
+            
+            m.cov1 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy1)
+            m.cov2 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy2)
+            m.cov3 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy3)
                 
-            else: 
-                m.cov1_sparse = pyo.Constraint(m.NumRes_half, rule=y_covy1)
-                m.cov2_sparse = pyo.Constraint(m.NumRes_half, rule=y_covy2)
-                m.cov3_sparse = pyo.Constraint(m.NumRes_half, rule=y_covy3)
-                
-
-            m.TotalDynamic = pyo.Var(initialize=1) # total # of human measurements
             m.con_manual = pyo.Constraint(rule=total_dynamic_con)
+                    
             m.cost = pyo.Var(initialize=budget)
             m.cost_compute = pyo.Constraint(rule=cost_compute)
             m.budget_limit = pyo.Constraint(rule=cost_limit)
@@ -511,6 +512,35 @@ class MeasurementOptimizer:
         ex_model = LogDetModel(num_para=5)
         m.egb = ExternalGreyBoxBlock()
         m.egb.set_external_model(ex_model)
+
+    def compute_FIM(self, measurement_vector):
+        """
+        Compute a total FIM given a set of measurements
+
+        :param measurement_vector: a list of the length of all measurements, each element in [0,1]
+            0 indicates this measurement is not selected, 1 indicates selected
+            Note: Ensure the order of this list is the same as the order of Q, i.e. [CA(t1), ..., CA(tN), CB(t1), ...]
+        :return:
+        """
+        # generate measurement matrix
+        measurement_matrix = self.__measure_matrix(measurement_vector)
+
+        # compute FIM
+        FIM = np.zeros((self.no_param, self.no_param))
+
+        for m1_rank in range(self.total_no_measure):
+            for m2_rank in range(self.total_no_measure):
+                Q_m1 = np.matrix(self.Q[m1_rank])
+                Q_m2 = np.matrix(self.Q[m2_rank])
+                measure_matrix = np.matrix([measurement_matrix[m1_rank,m2_rank]])
+                sigma = np.matrix([self.Sigma_inv[m1_rank,m2_rank]])
+                FIM_unit = Q_m1.T@measure_matrix@sigma@Q_m2
+                FIM += FIM_unit
+        # FIM read
+        if self.verbose:
+            self.__print_FIM(FIM)
+
+        return FIM
 
     def continuous_optimization_cvxpy(self, objective='D', budget=100, solver=None):
         """
