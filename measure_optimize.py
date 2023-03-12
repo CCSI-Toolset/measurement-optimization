@@ -372,7 +372,7 @@ class MeasurementOptimizer:
         m = pyo.ConcreteModel()
 
         # response set
-        m.NumRes = pyo.Set(initialize=range(self.total_no_measure))
+        m.NumRes = pyo.Set(initialize=range(self.num_measure))
         # FIM set 
         m.DimFIM = pyo.Set(initialize=range(self.num_param))
 
@@ -409,9 +409,9 @@ class MeasurementOptimizer:
                 for i in m.NumRes:
                     for j in m.NumRes:
                         if i>j:
-                            summi += m.cov_y[i,j]*self.fim_collection[i*self.total_no_measure+j][a][b]
+                            summi += m.cov_y[i,j]*self.fim_collection[i*self.num_measure+j][a][b]
                         else:
-                            summi += m.cov_y[j,i]*self.fim_collection[i*self.total_no_measure+j][a][b]
+                            summi += m.cov_y[j,i]*self.fim_collection[i*self.num_measure+j][a][b]
                 return m.TotalFIM[a,b] == summi
             else:
                 return m.TotalFIM[a,b] == m.TotalFIM[b,a]
@@ -449,7 +449,7 @@ class MeasurementOptimizer:
             return m.cost <= budget
         
         def total_dynamic(m):
-            return m.TotalDynamic==sum(m.cov_y[i,i] for i in range(num_fixed, self.total_no_measure))
+            return m.TotalDynamic==sum(m.cov_y[i,i] for i in range(num_fixed, self.num_measure))
         
         def total_dynamic_con(m):
             return m.TotalDynamic<=manual_number
