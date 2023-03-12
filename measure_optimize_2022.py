@@ -13,247 +13,89 @@ from scipy.sparse import coo_matrix
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxBlock
 
-
-
-class DataProcess:
-    def __init__(self) -> None:
-        return 
-    
-    def read_jaco(self, filename):
-        """Read Jacobian from csv file 
-        """
-        jaco_info = pd.read_csv(filename, index_col=False)
-        jaco_list = np.asarray(jaco_info)
-
-        jaco = []
-        for i in range(len(jaco_list)):
-            # jacobian remove fisrt column
-            jaco.append(list(jaco_list[i][1:]))
-
-        print("jacobian shape:", np.shape(jaco))
-        return jaco
-
-    def split_jaco(self, jaco, idx, num_t):
-        """Split Jacobian according to measurements
-        idx: idx of static measurements 
-        """
-        jaco_idx = jaco[idx*num_t:(idx+1)*num_t][:]
-        return jaco_idx 
-
 class MeasurementOptimizer:
-    def __init__(self, Q, static_idx, dynamic_idx, num_param, error_cov=None, error_opt=None, verbose=True):
+    def __init__(self, static_Q, dynamic_Q, static_Nt, dynamic_Nt, num_param, error_cov=None, verbose=True):
         """
         Argument
         --------
-        :param Q: a list of lists containing Jacobian matrix. 
-            It contains m lists, m is the No. of meausrements 
-            Each list contains an N_t_m*num_param elements, which is the sensitivity matrix Q for measurement m 
-        :param static_idx: a list of static-cost measurements index 
-        :param dynamic_idx: a list of dynamic-cost measurements index 
-        :param num_param: No. of parameters
+        :param Q: a list of lists containing Jacobian matrix. It should be an m*n matrix, n is No. of parameters, m is the No. of measurements times No. of timepoints.
+            Note: Q should be stacked in a way where time points of one measurement are neighbours. For e.g., [CA(t1), ..., CA(tN), CB(t1), ...]
+        :param no_measure: No. of measurement items
+        :param no_t: No. of time points. Note: this number should be the same for all measurement items
         :param error_cov: 
             If it is a list of lists of shape (Nm*Nt)*(Nm*Nt), containing the variance-covariance matrix of all measurements
             If it is a list of lists of shape Nm*Nm, it will be duplicated for every timepoint
             If it is an Nm*1 vector, these are variances, and covariances are 0. 
             If None, the default error variance-covariance matrix contains 1 for all variances, and 0 for all covariance
             i.e. a diagonal identity matrix
-        :param: error_opt;
-            1: variances given
-            2: 
         :param verbose: if print debug sentences
         """
-        # # of static and dynamic measurements
-        self.num_static = len(static_idx)
-        self.static_idx = static_idx
-        self.num_dynamic = len(dynamic_idx)
-        self.dynamic_idx = dynamic_idx
-        self.num_measure = len(Q)
-        assert self.num_measure==self.num_dynamic+self.num_static
+        #self.static_Q = static_Q
+        self.num_static = len(static_Q)
 
-        # measurements can have different # of timepoints
-        self.Nt = {}
-        for i in range(self.num_measure):
-            self.Nt[i] = len(Q[i])
-        # total number of measurement and time points
-        self.total_num_time = sum(self.Nt.values())
+        #self.dynamic_Q = dynamic_Q
+        self.num_dynamic = len(dynamic_Q)
+
+        self.total_no_measure = self.num_static + self.num_dynamic
+
+        self.static_Nt = static_Nt
+        self.dynamic_Nt = dynamic_Nt
 
         self.num_param = num_param
         self.verbose = verbose
 
-        # flattened Q and indexes
-        self._dynamic_flatten(Q)
+        self.Q = []
+        for i in range(self.num_static):
+            self.Q.append(static_Q[i])
+        for j in range(self.num_dynamic):
+            self.Q.append(dynamic_Q[j])
 
         # check the shape of every input, make sure they are consistent
-        # TO BE ADDED after deciding on user interface
         #self.__check(Q, no_measure, no_t, cost, error_cov)
 
         # build and check PSD of Sigma
-        Sigma = self._build_sigma(error_cov, error_opt)
-        self._split_sigma(Sigma)
+        self.__build_sigma(error_cov)
 
-    def _dynamic_flatten(self, Q):
-        """Update dynamic flattened matrix index. 
-        dynamic_flatten matrix: flatten dynamic-cost measurements, not flatten static-costs, [s1, d1|t1, ..., d1|tN, s2]
-        Flatten matrix: flatten dynamic-cost and static-cost measuremenets
+    def __check(self, Q, no_measure, no_t, cost, error_cov):
         """
-
-        ### flatten to be cov matrix 
-        Q_dynamic_flatten = []
-        self.head_pos_dynamic_flatten = {}
-        self.static_idx_dynamic_flatten = []
-        self.dynamic_idx_dynamic_flatten = []
-
-        Q_flatten = []
-        self.head_pos_flatten = {}
-        self.static_idx_flatten = []
-        self.dynamic_idx_flatten = []
-
-        self.dynamic_to_flatten = {}
-
-        count1 = 0
-        count2 = 0
-        for i in self.num_measure:
-            if i in self.static_idx:
-                # dynamic_flatten
-                Q_dynamic_flatten.append(Q[i])
-                self.head_pos_dynamic_flatten[i] = count1 
-                self.static_idx_dynamic_flatten.append(count1)
-                self.dynamic_to_flatten[count1] = []
-                count1 += 1 
-
-                # flatten 
-                for t in range(len(Q[i])):
-                    Q_flatten.append(Q[i][t])
-                    if t==0:
-                        self.head_pos_flatten[i] = count2
-                    self.static_idx_flatten.append(count2)
-                    # map
-                    self.dynamic_to_flatten.append(count2)
-                    count2 += 1 
-
-            else:
-                for t in range(len(Q[i])):
-                    Q_dynamic_flatten.append(Q[i][t])
-                    if t==0:
-                        self.head_pos_dynamic_flatten[i] = count1
-                    self.dynamic_idx_dynamic_flatten.append(count1) 
-                    count1 += 1 
-
-                    Q_flatten.append(Q[i][t])
-                    if t==0:
-                        self.head_pos_flatten[i] = count2
-                    self.static_idx_flatten[count1] = count2
-                    # map
-                    self.dynamic_to_flatten.append(count2)
-                    count2 += 1 
-
-
-        self.Q_dynamic_flatten = Q_dynamic_flatten 
-
-    def _flatten(self, Q):
-        """Update cov matrix and flattened matrix index. 
-        Not used any more. Merged to _dynamic_flatten. 
+        check if they are legal inputs
         """
+        # check shape of Q
+        total_no_measure, no_parameter = np.shape(Q)
+        if self.verbose:
+            print('Q shape:', total_no_measure, no_parameter)
 
-        ### flatten to be cov matrix 
-        Q_flatten = []
-        self.head_pos_flatten = {}
-        self.static_idx_flatten = []
-        self.dynamic_idx_flatten = []
+        self.total_no_measure = total_no_measure
+        self.no_param = no_parameter
 
-        count = 0
-        for i in self.num_measure:
-            for t in range(len(Q[i])):
-                Q_flatten.append(Q[i][t])
-                if t==0:
-                    self.head_pos_flatten[i] = count 
-                if i in self.static_idx:
-                    self.static_idx_flatten.append(count)
-                else:
-                    self.dynamic_idx_flatten.append(count)
-                count += 1 
+        assert total_no_measure==no_measure*no_t, "Check Q shape!!!"
 
-        self.Q_flatten = Q_flatten 
+        # check shape of costs
+        assert len(cost)==no_measure*no_t, "Check costs!!!"
 
-    def _build_sigma(self, error_cov, error_option):
-        """Build error covariance matrix 
-
-        if error_cov is None, return an identity matrix 
-        option 1: a list, each element is the corresponding variance, a.k.a. diagonal elements.
-            Shape: Sum(Nt) 
-        option 2: a list of lists, each element is the error covariances
-            This option assumes covariances not between measurements, but between timepoints for one measurement
-            Shape: Nm * (Nt_m * Nt_m)
-        option 3: a list of list, covariance matrix for a single time steps 
-            This option assumes the covariances between measurements at the same timestep in a time-invariant way 
-            Shape: Nm * Nm
-        option 4: a list of list, covariance matrix for the flattened measurements 
-            Shape: sum(Nt) * sum(Nt) 
-        """
-        
-        Sigma = np.zeros((self.total_num_time, self.total_num_time))
-        # identity matrix 
-        if not error_cov:
-            error_cov = [1]*self.total_num_time
-
-        if not error_cov or error_option==1:
-            for i in range(self.total_num_time):
-                Sigma[i,i] = error_cov[i]
-
-        elif error_option == 2: 
-            for i in range(self.num_measure):
-                # give the error covariance to Sigma 
-                sigma_i_start = self.head_pos_flatten[i]
-                for t1 in range(self.Nt[i]):
-                    for t2 in range(self.Nt[i]):
-                        Sigma[sigma_i_start+t1, sigma_i_start+t2] = error_cov[i][t1][t2]
-
-        elif error_option == 3:
-            for i in range(self.num_measure):
-                for j in range(self.num_measure):
-                    cov_ij = error_cov[i,j]
-                    head_i = self.head_pos_flatten[i]
-                    head_j = self.head_pos_flatten[j]
-                    # i, j may have different timesteps
-                    for t in range(min(self.Nt[i], self.Nt[j])):
-                        Sigma[t+head_i, t+head_j] = cov_ij
-     
-        elif error_option == 4:
-            Sigma = np.asarray(error_cov)
-
-        return Sigma
-        
-
-    def _split_sigma(self, Sigma):
-        """Split the error covariance matrix to be used for computation
-        """
-        Sigma_inv = np.pinv(Sigma)
+    def __build_sigma(self, error_cov):
 
         self.Sigma_inv = {}
         
-        # between static and static: (Nt_i+Nt_j)*(Nt_i+Nt_j) matrix
-        for i in self.static_idx_dynamic_flatten:
-            for j in self.static_idx_dynamic_flatten:
-                sig = np.zeros((self.Nt[i], self.Nt[j]))
-                # row [i, i+Nt_i], column [i, i+Nt_i]
-                for ti in range(self.Nt[i]):
-                    for tj in range(self.Nt[j]):
-                        sig[ti, tj] = Sigma_inv[self.head_pos_flatten[i]+ti, self.head_pos_flatten[j]+tj]
-                self.Sigma_inv[(i,j)] = sig
+        # if getting None: construct an identify matrix
+        if error_cov is None:
+            # construct identity matrix
+            for i in range(self.num_static):
+                for j in range(i, self.num_static):
+                    self.Sigma_inv[(i,j)] = self.Sigma_inv[(j,i)] = np.identity(self.static_Nt)
 
-        # between static and dynamic: Nt*1 matrix
-        for i in self.static_idx_dynamic_flatten:
-            for j in self.dynamic_idx_dynamic_flatten:
-                sig = np.zeros((self.Nt[i], 1))
-                # row [i, i+Nt_i], col [j]
-                for t in range(self.Nt[i]):
-                    sig[t, 0] = Sigma_inv[self.head_pos_flatten[i]+t, self.dynamic_to_flatten[j]] 
-                self.Sigma_inv[(i,j)] = 1
+            for i in range(self.num_static):
+                for j in range(self.num_static, self.total_no_measure):
+                    sigma = np.zeros((self.static_Nt, 1))
 
-        # between dynamic and dynamic: a scalar number 
-        for i in self.dynamic_idx_dynamic_flatten:
-            for j in self.dynamic_idx_dynamic_flatten:
-                self.Sigma_inv[(i,j)] = Sigma_inv[i,j]
+                    self.Sigma_inv[(i,j)] = self.Sigma_inv[(j,i)] = sigma 
+
+            for i in range(self.num_static, self.total_no_measure):
+                for j in range(self.num_static, self.total_no_measure):
+                    if i==j:
+                        self.Sigma_inv[(i,j)] = 1 
+                    else:
+                        self.Sigma_inv[(i,j)] = 0
 
         
     def fim_computation(self):
@@ -613,6 +455,33 @@ class MeasurementOptimizer:
                 
 
 
+class DataProcess:
+    def __init__(self) -> None:
+        """
+        """
+
+        return 
+
+    def read_jaco(self, filename):
+
+        jaco_info = pd.read_csv(filename, index_col=False)
+        jaco_list = np.asarray(jaco_info)
+
+        jaco = []
+        for i in range(len(jaco_list)):
+            # jacobian remove fisrt column
+            jaco.append(list(jaco_list[i][1:]))
+
+        print("jacobian shape:", np.shape(jaco))
+
+        return jaco
+
+    def split_jaco(self, jaco, idx, num_t):
+        """Split Jacobian 
+        idx: idx of static measurements 
+        """
+        jaco_idx = jaco[idx*num_t:(idx+1)*num_t][:]
+        return jaco_idx 
 
 
     
