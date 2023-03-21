@@ -31,17 +31,40 @@ class DataProcess:
             jaco.append(list(jaco_list[i][1:]))
 
         print("jacobian shape:", np.shape(jaco))
-        return jaco
+        self.jaco = jaco
 
-    def split_jaco(self, jaco, idx, num_t):
+    def stack_Q(self, static_idx, dynamic_idx, Nt, keep_idx_position=False):
+        """Stack all Q together.
+        If keep_idx_position is False, reorganize the indexes so 
+        static-cost measurement indexes are before dynamic-cost measurement indexes
+        """
+        Q = [] 
+        if keep_idx_position:
+            dim = max((max(static_idx), max(dynamic_idx)))
+            for i in dim:
+                if i in static_idx or i in dynamic_idx:
+                    Q.append(self._split_jaco(self.jaco, i, Nt))
+        
+        else:
+            for i in static_idx:
+                Q.append(self._split_jaco(self.jaco, i, Nt))
+            for j in dynamic_idx:
+                Q.append(self._split_jaco(self.jaco, j, Nt))
+
+        return Q 
+
+
+    def _split_jaco(self, jaco, idx, num_t):
         """Split Jacobian according to measurements
         idx: idx of static measurements 
         """
         jaco_idx = jaco[idx*num_t:(idx+1)*num_t][:]
         return jaco_idx 
+    
+
 
 class MeasurementOptimizer:
-    def __init__(self, Q, static_idx, dynamic_idx, num_param, error_cov=None, error_opt=None, verbose=True):
+    def __init__(self, Q, static_idx, dynamic_idx, num_param, measure_names=None, error_cov=None, error_opt=None, verbose=True):
         """
         Argument
         --------
