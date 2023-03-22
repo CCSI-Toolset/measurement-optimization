@@ -74,6 +74,7 @@ class MeasurementOptimizer:
         :param static_idx: a list of static-cost measurements index 
         :param dynamic_idx: a list of dynamic-cost measurements index 
         :param num_param: No. of parameters
+        :param measure_names: a list of strings of measurement names
         :param error_cov: 
             defined error covariance matrix here
             if None: error covariance matrix is an identity matrix
@@ -109,6 +110,7 @@ class MeasurementOptimizer:
 
         self.num_param = num_param
         self.verbose = verbose
+        self.measure_name = measure_names
 
         # flattened Q and indexes
         self._dynamic_flatten(Q)
@@ -348,24 +350,34 @@ class MeasurementOptimizer:
         print('Min eig:', min(eig), '; log_e(min_eig):', np.log(min(eig)), '; log_10(min_eig):', np.log10(min(eig)))
         print('Cond:', max(eig)/min(eig))
 
-    def continuous_optimization(self, cost_list, mixed_integer=False, obj="A", num_fixed=9, 
-                                fix=False, sparse=False, init_cov_y=None, initial_fim=None,
-                                manual_number=20, budget=100):
+    def continuous_optimization(self, cost_list, mixed_integer=False, obj="A", 
+                                fix=False, sparse=False,
+                                num_dynamic_t_name = None, 
+                                discretize_time = None,
+                                manual_number=20, budget=100, 
+                                dynamic_install_cost = None, 
+                                each_manual_number = None,
+                                init_cov_y=None, initial_fim=None):
         
         """Continuous optimization problem formulation. 
 
-        Parameter
+        Parameter 
         ---------
         :param cost_list: A list, containing the cost of each timepoint of corresponding measurement
         :param mixed_integer: not relaxing integer decisions
         :param obj: "A" or "D" optimality, use trace or determinant of FIM 
-        :param num_fixed: number of static-cost measurements 
         :param fix: if solving as a square problem or with DOFs 
         :param sparse: if using sparse set to define decisions and FIM, or not 
-        :param init_cov_y: initialize decision variables 
-        :param initial_fim: initialize FIM
+        :param num_dynamic_t_name: a list of the exact time points for the dynamic-cost measurements time points 
+        :param discretize_time: a scalar number of the time interval between two manual measurements 
+        :param end_time: a scalar number, the end time of measurements 
         :param manual_number: the maximum number of human measurements for dynamic measurements
         :param budget: total budget
+        :param dynamic_install_cost: a list of the installation costs for dynamic-cost measurements 
+        :param each_manual_number: the maximum number of human measurements for each dynamic-cost measurement 
+        :param init_cov_y: initialize decision variables 
+        :param initial_fim: initialize FIM
+        
         """
 
         m = pyo.ConcreteModel()
@@ -374,6 +386,16 @@ class MeasurementOptimizer:
         m.NumRes = pyo.Set(initialize=range(self.num_measure_dynamic_flatten))
         # FIM set 
         m.DimFIM = pyo.Set(initialize=range(self.num_param))
+
+        # dynamic measurements num 
+        self.dynamic_Nt = self.Nt[self.num_static] # dynamic measurement Nt
+        m.DimDynamic = pyo.Set(initialize=range(self.num_static, self.num_measure))
+        m.DimDynamic_t = pyo.Set(initialize=range(self.dynamic_Nt)) 
+        
+        dynamic_time = {}
+        for i in range(self.dynamic_Nt):
+            dynamic_time[i] = num_dynamic_t_name[i]
+        self.dynamic_time = dynamic_time
 
         # initialize with identity
         def identity(m,a,b):
@@ -404,9 +426,9 @@ class MeasurementOptimizer:
                 m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, bounds=(0,1), within=pyo.Binary)
         else:
             if sparse:
-                m.cov_y = pyo.Var(m.NumRes_half, initialize=initialize, bounds=(0.01,1), within=pyo.NonNegativeReals)
+                m.cov_y = pyo.Var(m.NumRes_half, initialize=initialize, bounds=(1E-6,1), within=pyo.NonNegativeReals)
             else:
-                m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, bounds=(0.01,1), within=pyo.NonNegativeReals)
+                m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
         
         if fix:
             m.cov_y.fix()
@@ -439,7 +461,7 @@ class MeasurementOptimizer:
         m.TotalDynamic = pyo.Var(initialize=1)
     
         def total_dynamic(m):
-            return m.TotalDynamic==sum(m.cov_y[i,i] for i in range(num_fixed, self.num_measure_dynamic_flatten))
+            return m.TotalDynamic==sum(m.cov_y[i,i] for i in range(self.num_static, self.num_measure_dynamic_flatten))
         
         m.manual = pyo.Constraint(rule=total_dynamic)
             
@@ -470,16 +492,23 @@ class MeasurementOptimizer:
 
         ### cost constraints
         def cost_compute(m):
-            return m.cost == sum(m.cov_y[i,i]*cost_list[i] for i in m.NumRes)
+            return m.cost == sum(m.cov_y[i,i]*cost_list[i] for i in m.NumRes)+sum(m.if_install_dynamic[j]*dynamic_install_cost[j-self.num_static] for j in m.DimDynamic)
         
         def cost_limit(m):
-            return m.cost <= budget
-        
-        def total_dynamic(m):
-            return m.TotalDynamic==sum(m.cov_y[i,i] for i in range(num_fixed, self.num_measure))
-        
+            return m.cost <= budget 
+
         def total_dynamic_con(m):
             return m.TotalDynamic<=manual_number
+        
+        def dynamic_fix_yd(m,i,j):
+            # map measurement index i to its dynamic_flatten index
+            start = self.num_static + (i-self.num_static)*self.dynamic_Nt+j
+            return m.if_install_dynamic[i] >= m.cov_y[j,j]
+        
+        def dynamic_fix_yd_con2(m,i):
+            start = self.num_static + (i-self.num_static)*self.dynamic_Nt
+            end = self.num_static + (i-self.num_static+1)*self.dynamic_Nt
+            return m.if_install_dynamic[i] <= sum(m.cov_y[j,j] for j in range(start, end))
         
         # set up Design criterion
         def ComputeTrace(m):
@@ -492,7 +521,7 @@ class MeasurementOptimizer:
         else:
             m.TotalFIM_con = pyo.Constraint(m.DimFIM, m.DimFIM, rule=eval_fim)
         
-        if not fix:
+        if not fix: 
         
             if mixed_integer and not sparse:
                 m.sym = pyo.Constraint(m.NumRes, m.NumRes, rule=symmetry)
@@ -502,6 +531,45 @@ class MeasurementOptimizer:
             m.cov3 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy3)
                 
             m.con_manual = pyo.Constraint(rule=total_dynamic_con)
+
+            # each manual number smaller than 5 
+            if each_manual_number:
+                
+                for i in range(self.num_dynamic):
+                    def dynamic_manual_num(m):
+                        start = self.num_static + i*self.dynamic_Nt
+                        end = self.num_static + (i+1)*self.dynamic_Nt
+                        cost = sum(m.cov_y[j,j] for j in range(start, end))
+                        return cost <= each_manual_number
+                    
+                    con_name = "con"+str(i)
+                    m.add_component(con_name, pyo.Constraint(expr=dynamic_manual_num))
+                    
+            if discretize_time:
+                
+                for i in m.DimDynamic:
+                    for t in range(self.dynamic_Nt):
+                        # end time is an open end of the region, so another constraint needs to be added to include end_time
+                        #if dynamic_time[t]+discretize_time <= end_time+0.1*discretize_time:       
+                                                
+                        def discretizer(m):
+                            sumi = 0
+
+                            count = 0 
+                            while (count+t<self.dynamic_Nt) and (dynamic_time[count+t]-dynamic_time[t])<discretize_time:
+                                surro_idx = self.num_static + (i-self.num_static)*self.dynamic_Nt + t + count
+                                sumi += m.cov_y[surro_idx, surro_idx]
+                                count += 1 
+
+                            return sumi <= 1 
+
+                        con_name="con_discreti_"+str(i)+str(t)
+                        m.add_component(con_name, pyo.Constraint(expr=discretizer))
+                        
+            # dynamic-cost measurements installaction cost 
+            m.if_install_dynamic = pyo.Var(m.DimDynamic, initialize=0, bounds=(0,1.01))
+            m.dynamic_cost = pyo.Constraint(m.DimDynamic, m.DimDynamic_t, rule=dynamic_fix_yd)
+            m.dynamic_con2 = pyo.Constraint(m.DimDynamic, rule=dynamic_fix_yd_con2)
                     
             m.cost = pyo.Var(initialize=budget)
             m.cost_compute = pyo.Constraint(rule=cost_compute)
@@ -564,6 +632,28 @@ class MeasurementOptimizer:
             self.__print_FIM(FIM)
 
         return FIM
+    
+    def solve(self, mod, mip_option=False, objective="A"):
+        if not mip_option and objective=="A":
+            solver = pyo.SolverFactory('ipopt')
+            solver.options['linear_solver'] = "ma57"
+            solver.solve(mod, tee=True)
+
+        elif mip_option and objective=="A":
+            solver = pyo.SolverFactory('gurobi', solver_io="python")
+            solver.options['mipgap'] = 0.1
+            solver.solve(mod, tee=True)
+            
+        elif objective=="D":  
+            solver = pyo.SolverFactory('cyipopt')
+            solver.config.options['hessian_approximation'] = 'limited-memory' 
+            additional_options={'max_iter':3000}
+            
+            for k,v in additional_options.items():
+                solver.config.options[k] = v
+            solver.solve(mod, tee=True)
+
+        return mod
 
     def continuous_optimization_cvxpy(self, objective='D', budget=100, solver=None):
         """
@@ -629,55 +719,46 @@ class MeasurementOptimizer:
         self.__solution_analysis(y_matrice, obj.value)
             
 
-    
-
-    def __solution_analysis(self, y_value, obj_value):
+    def extract_solutions(self, mod):
         """
-        Analyze solution. Rounded solutions, test if they meet constraints, and print information about the solution.
-
-        :param y_value: cvxpy problem output y 
-        :param obj_value: cvxopy problem output objective function value
+        Extract and show solutions. 
         """
+        # ans_y is a list of lists
+        ans_y = np.zeros((self.num_measure_dynamic_flatten,self.num_measure_dynamic_flatten))
 
-        ## deal with y solution, round
-        sol = np.zeros((self.total_no_measure,self.total_no_measure))
+        for i in range(self.num_measure_dynamic_flatten):
+            for j in range(i, self.num_measure_dynamic_flatten):
+                cov = pyo.value(mod.cov_y[i,j])
+                ans_y[i,j] = ans_y[j,i] = cov 
 
-        # get all solution value. If a solution is larger than 0.99, round it to 1. if it is smaller than 0.01, floor it to 0.
-        for i in range(self.total_no_measure):
-            for j in range(self.total_no_measure):
-                sol[i,j] = y_value[i,j].value
-                
-                if sol[i,j] >0.99:
-                    sol[i,j] = 1
-                    
-                if sol[i,j] <0.01:
-                    sol[i,j] = 0
-        
-        ## test solution 
-        for i in range(self.total_no_measure):
-            for j in range(self.total_no_measure):
-                if abs(sol[i,j]-sol[j,i])>0.01:
-                    print('Covariance between measurements {i_n} and {j_n} has wrong symmetry'.format(i_n=i, j_n=j))
-                    print('Cov 1:' , sol[i,j] , ', Cov 2:' , sol[j,i] + '.')
-                    
-                if abs(sol[i,j]-min(sol[i,i], sol[j,j]))>0.01:
-                    print('Covariance between measurements {i_n} and {j_n} has wrong computation'.format(i_n=i, j_n=j))
-                    print('i weight:', sol[i,i] , ', j weight:', sol[j,j] , '; Cov weight:', sol[i,j])
+        # round small errors
+        for i in range(len(ans_y)):
+            for j in range(len(ans_y[0])):
+                if ans_y[i][j] < 0.05:
+                    ans_y[i][j] = int(0)
+                elif ans_y[i][j] > 0.95:
+                    ans_y[i][j] = int(1)
+                else: 
+                    ans_y[i][j] = round(ans_y[i][j], 2)
 
-        ## obj
+        for c in range(self.num_static):
+            print(self.measure_name[c], ": ", ans_y[c,c])
 
-        print("Objective:", obj_value)
-        
-        solution_choice = []
-        
-        for i in range(self.total_no_measure):
-            solution_choice.append(sol[i,i])
+        sol_y = np.asarray([ans_y[i,i] for i in range(self.num_static, self.num_measure_dynamic_flatten)])
 
-        ## check if obj right
-        print('FIM info verification (The following result is computed by compute_FIM method)')
-        real_FIM = self.compute_FIM(solution_choice)
+        sol_y = np.reshape(sol_y, (self.num_dynamic, self.dynamic_Nt))
+        np.around(sol_y)
 
-        
+        for r in range(len(sol_y)):
+            #print(dynamic_name[r], ": ", sol_y[r])
+            print(self.measure_name[r+self.num_static], "(time points [min]):")
+            for i, t in enumerate(sol_y[r]):
+                if t>0.5:
+                    print(self.dynamic_time[i])
+
+        return ans_y, sol_y
+
+
 
                 
 
