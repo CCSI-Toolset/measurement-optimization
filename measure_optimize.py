@@ -2,18 +2,37 @@
 Measurement optimization tool 
 @University of Notre Dame
 """
-from logging import warning
 import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
-#import cvxpy as cp
-import warnings
 from greybox_generalize import LogDetModel
-from scipy.sparse import coo_matrix
-from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel
-from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxBlock
+from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel, ExternalGreyBoxBlock
+from enum import Enum
 
 
+class covariance_lib(Enum): 
+    """Covariance definition 
+    if mode0: error covariance matrix is an identity matrix
+    if mode1: a list, each element is the corresponding variance, a.k.a. diagonal elements.
+        Shape: Sum(Nt) 
+    if mode2: a list of lists, each element is the error covariances
+        This option assumes covariances not between measurements, but between timepoints for one measurement
+        Shape: Nm * (Nt_m * Nt_m)
+    if mode3: a list of list, covariance matrix for a single time steps 
+        This option assumes the covariances between measurements at the same timestep in a time-invariant way 
+        Shape: Nm * Nm
+    if mode4: a list of list, covariance matrix for the flattened measurements 
+        Shape: sum(Nt) * sum(Nt) 
+    """
+    mode0 = 0
+    mode1 = 1
+    mode2 = 2 
+    mode3 = 3
+    mode4 = 4 
+
+    @classmethod
+    def has_value(cls, value):
+        return value in cls._value2member_map_
 
 class DataProcess:
     def __init__(self) -> None:
@@ -30,26 +49,21 @@ class DataProcess:
             # jacobian remove fisrt column
             jaco.append(list(jaco_list[i][1:]))
 
-        print("jacobian shape:", np.shape(jaco))
         self.jaco = jaco
 
-    def stack_Q(self, static_idx, dynamic_idx, Nt, keep_idx_position=False):
-        """Stack all Q together.
-        If keep_idx_position is False, reorganize the indexes so 
-        static-cost measurement indexes are before dynamic-cost measurement indexes
+    def get_Q_list(self, measure_info, Nt):
+        """Combine Q for each measurement to be in one Q.
+        measure_info: a pandas dataframe containing measurement information
+        Nt: number of timepoints is needed to split Q for each measurement 
         """
+
         Q = [] 
-        if keep_idx_position:
-            dim = max((max(static_idx), max(dynamic_idx)))
-            for i in dim:
-                if i in static_idx or i in dynamic_idx:
-                    Q.append(self._split_jaco(self.jaco, i, Nt))
-        
-        else:
-            for i in static_idx:
-                Q.append(self._split_jaco(self.jaco, i, Nt))
-            for j in dynamic_idx:
-                Q.append(self._split_jaco(self.jaco, j, Nt))
+        static_idx = measure_info[measure_info['dynamic_cost']==0]['Q_index'].tolist()
+        dynamic_idx = measure_info[measure_info['dynamic_cost']!=0]['Q_index'].tolist()
+        for i in static_idx:
+            Q.append(self._split_jaco(self.jaco, i, Nt))
+        for j in dynamic_idx:
+            Q.append(self._split_jaco(self.jaco, j, Nt))
 
         return Q 
 
@@ -64,20 +78,17 @@ class DataProcess:
 
 
 class MeasurementOptimizer:
-    def __init__(self, Q, static_idx, dynamic_idx, num_param, measure_names=None, error_cov=None, error_opt=None, verbose=True):
+    def __init__(self, Q, measure_info, error_cov=None, error_opt=covariance_lib.mode0, verbose=True):
         """
         Argument
         --------
         :param Q: a list of lists containing Jacobian matrix. 
             It contains m lists, m is the No. of meausrements 
             Each list contains an N_t_m*num_param elements, which is the sensitivity matrix Q for measurement m 
-        :param static_idx: a list of static-cost measurements index 
-        :param dynamic_idx: a list of dynamic-cost measurements index 
-        :param num_param: No. of parameters
-        :param measure_names: a list of strings of measurement names
+        :param measure_info: a pandas DataFrame containing measurement information.
         :param error_cov: 
             defined error covariance matrix here
-            if None: error covariance matrix is an identity matrix
+            if error_opt==0: error covariance matrix is an identity matrix
             if error_opt==1: a list, each element is the corresponding variance, a.k.a. diagonal elements.
                 Shape: Sum(Nt) 
             if error_opt==2: a list of lists, each element is the error covariances
@@ -93,6 +104,12 @@ class MeasurementOptimizer:
         :param verbose: if print debug sentences
         """
         # # of static and dynamic measurements
+        static_idx = measure_info[measure_info['dynamic_cost']==0]['Q_index'].tolist()
+        dynamic_idx = measure_info[measure_info['dynamic_cost']!=0]['Q_index'].tolist()
+        static_row = measure_info[measure_info['dynamic_cost']==0].index.values.tolist()
+        dynamic_row = measure_info[measure_info['dynamic_cost']!=0].index.values.tolist()
+
+        self.measure_info = measure_info
         self.num_static = len(static_idx)
         self.static_idx = static_idx
         self.num_dynamic = len(dynamic_idx)
@@ -108,16 +125,34 @@ class MeasurementOptimizer:
         # total number of all measurements and all time points
         self.total_num_time = sum(self.Nt.values())
 
-        self.num_param = num_param
+        self.num_param = len(Q[0][0])
         self.verbose = verbose
-        self.measure_name = measure_names
+        self.measure_name = measure_info['name'].tolist()
+        self.cost_list = measure_info[measure_info['dynamic_cost']==0]['static_cost'].tolist()
+        for i in dynamic_row:
+            q_ind = measure_info.iloc[i]['Q_index']
+            for t in range(self.Nt[q_ind]):
+                self.cost_list.append(measure_info.iloc[i]['dynamic_cost'])
+
+        # dynamic install cost
+        self.dynamic_install_cost = measure_info[measure_info['dynamic_cost']!=0]['static_cost'].tolist()
+
+        # min time interval
+        min_time_interval = measure_info['min_time_interval'].tolist()
+        if np.asarray(min_time_interval).any():
+            self.min_time_interval = min_time_interval
+        else:
+            self.min_time_interval = None
+
+        # each manual number 
+        each_manual_number = measure_info['max_manual_number'].tolist()
+        if np.asarray(each_manual_number).any():
+            self.each_manual_number = each_manual_number
+        else:
+            self.each_manual_number = None 
 
         # flattened Q and indexes
         self._dynamic_flatten(Q)
-
-        # check the shape of every input, make sure they are consistent
-        # TO BE ADDED after deciding on user interface
-        #self.__check(Q, no_measure, no_t, cost, error_cov)
 
         # build and check PSD of Sigma
         Sigma = self._build_sigma(error_cov, error_opt)
@@ -350,13 +385,10 @@ class MeasurementOptimizer:
         print('Min eig:', min(eig), '; log_e(min_eig):', np.log(min(eig)), '; log_10(min_eig):', np.log10(min(eig)))
         print('Cond:', max(eig)/min(eig))
 
-    def continuous_optimization(self, cost_list, mixed_integer=False, obj="A", 
+    def continuous_optimization(self, mixed_integer=False, obj="A", 
                                 fix=False, sparse=False,
                                 num_dynamic_t_name = None, 
-                                discretize_time = None,
                                 manual_number=20, budget=100, 
-                                dynamic_install_cost = None, 
-                                each_manual_number = None,
                                 init_cov_y=None, initial_fim=None):
         
         """Continuous optimization problem formulation. 
@@ -403,7 +435,7 @@ class MeasurementOptimizer:
         def initialize_point(m,a,b):
             return init_cov_y[a][b]
         
-        if init_cov_y:
+        if init_cov_y.any():
             initialize=initialize_point
         else:
             initialize=identity
@@ -436,6 +468,14 @@ class MeasurementOptimizer:
         def init_fim(m,p,q):
             return initial_fim[p,q]
         
+        if initial_fim is not None:
+            # Initialize dictionary for grey-box model
+            fim_initial_dict = {}
+            for i in range(self.num_param):
+                for j in range(i, self.num_param):
+                    str_name = 'ele_'+str(i)+"_"+str(j)
+                    fim_initial_dict[str_name] = initial_fim[i,j] 
+        
         if sparse:
             m.TotalFIM = pyo.Var(m.DimFIM_half, initialize=init_fim)
         else:
@@ -451,19 +491,16 @@ class MeasurementOptimizer:
                 for i in m.NumRes:
                     for j in m.NumRes:
                         if j>=i:
-                            summi += m.cov_y[i,j]*self.fim_collection[i*self.num_measure+j][a][b]
+                            summi += m.cov_y[i,j]*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
                         else:
-                            summi += m.cov_y[j,i]*self.fim_collection[i*self.num_measure+j][a][b]
+                            summi += m.cov_y[j,i]*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
                 return m.TotalFIM[a,b] == summi
             else:
                 return m.TotalFIM[a,b] == m.TotalFIM[b,a]
             
-        m.TotalDynamic = pyo.Var(initialize=1)
     
         def total_dynamic(m):
             return m.TotalDynamic==sum(m.cov_y[i,i] for i in range(self.num_static, self.num_measure_dynamic_flatten))
-        
-        m.manual = pyo.Constraint(rule=total_dynamic)
             
         ### cov_y constraints
         def y_covy1(m, a, b):
@@ -492,7 +529,7 @@ class MeasurementOptimizer:
 
         ### cost constraints
         def cost_compute(m):
-            return m.cost == sum(m.cov_y[i,i]*cost_list[i] for i in m.NumRes)+sum(m.if_install_dynamic[j]*dynamic_install_cost[j-self.num_static] for j in m.DimDynamic)
+            return m.cost == sum(m.cov_y[i,i]*self.cost_list[i] for i in m.NumRes)+sum(m.if_install_dynamic[j]*self.dynamic_install_cost[j-self.num_static] for j in m.DimDynamic)
         
         def cost_limit(m):
             return m.cost <= budget 
@@ -522,6 +559,9 @@ class MeasurementOptimizer:
             m.TotalFIM_con = pyo.Constraint(m.DimFIM, m.DimFIM, rule=eval_fim)
         
         if not fix: 
+
+            m.TotalDynamic = pyo.Var(initialize=1)
+            m.manual = pyo.Constraint(rule=total_dynamic)
         
             if mixed_integer and not sparse:
                 m.sym = pyo.Constraint(m.NumRes, m.NumRes, rule=symmetry)
@@ -533,20 +573,19 @@ class MeasurementOptimizer:
             m.con_manual = pyo.Constraint(rule=total_dynamic_con)
 
             # each manual number smaller than 5 
-            if each_manual_number:
+            if self.each_manual_number is not None:
                 
                 for i in range(self.num_dynamic):
                     def dynamic_manual_num(m):
                         start = self.num_static + i*self.dynamic_Nt
                         end = self.num_static + (i+1)*self.dynamic_Nt
                         cost = sum(m.cov_y[j,j] for j in range(start, end))
-                        return cost <= each_manual_number
+                        return cost <= self.each_manual_number[0]
                     
                     con_name = "con"+str(i)
                     m.add_component(con_name, pyo.Constraint(expr=dynamic_manual_num))
                     
-            if discretize_time:
-                
+            if self.min_time_interval is not None:
                 for i in m.DimDynamic:
                     for t in range(self.dynamic_Nt):
                         # end time is an open end of the region, so another constraint needs to be added to include end_time
@@ -556,7 +595,7 @@ class MeasurementOptimizer:
                             sumi = 0
 
                             count = 0 
-                            while (count+t<self.dynamic_Nt) and (dynamic_time[count+t]-dynamic_time[t])<discretize_time:
+                            while (count+t<self.dynamic_Nt) and (dynamic_time[count+t]-dynamic_time[t])<self.min_time_interval[0]:
                                 surro_idx = self.num_static + (i-self.num_static)*self.dynamic_Nt + t + count
                                 sumi += m.cov_y[surro_idx, surro_idx]
                                 count += 1 
@@ -567,7 +606,7 @@ class MeasurementOptimizer:
                         m.add_component(con_name, pyo.Constraint(expr=discretizer))
                         
             # dynamic-cost measurements installaction cost 
-            m.if_install_dynamic = pyo.Var(m.DimDynamic, initialize=0, bounds=(0,1.01))
+            m.if_install_dynamic = pyo.Var(m.DimDynamic, initialize=0, bounds=(0,1))
             m.dynamic_cost = pyo.Constraint(m.DimDynamic, m.DimDynamic_t, rule=dynamic_fix_yd)
             m.dynamic_con2 = pyo.Constraint(m.DimDynamic, rule=dynamic_fix_yd_con2)
                     
@@ -582,7 +621,7 @@ class MeasurementOptimizer:
         elif obj == "D":
 
             def _model_i(b):
-                self.build_model_external(b)
+                self.build_model_external(b, fim_init=fim_initial_dict)
             m.my_block = pyo.Block(rule=_model_i)
 
             for i in range(self.num_param):
@@ -599,8 +638,8 @@ class MeasurementOptimizer:
         return m 
 
 
-    def build_model_external(self, m):
-        ex_model = LogDetModel(num_para=5)
+    def build_model_external(self, m, fim_init=None):
+        ex_model = LogDetModel(num_para=5, init_fim=fim_init)
         m.egb = ExternalGreyBoxBlock()
         m.egb.set_external_model(ex_model)
 
@@ -647,7 +686,8 @@ class MeasurementOptimizer:
         elif objective=="D":  
             solver = pyo.SolverFactory('cyipopt')
             solver.config.options['hessian_approximation'] = 'limited-memory' 
-            additional_options={'max_iter':3000}
+            additional_options={'max_iter':3000, 'output_file': 'console_output',
+                                'linear_solver':'mumps'}
             
             for k,v in additional_options.items():
                 solver.config.options[k] = v
@@ -751,10 +791,11 @@ class MeasurementOptimizer:
 
         for r in range(len(sol_y)):
             #print(dynamic_name[r], ": ", sol_y[r])
-            print(self.measure_name[r+self.num_static], "(time points [min]):")
-            for i, t in enumerate(sol_y[r]):
-                if t>0.5:
-                    print(self.dynamic_time[i])
+            print(self.measure_name[r+self.num_static])
+            print(sol_y[r])
+            #for i, t in enumerate(sol_y[r]):
+            #    if t>0.5:
+            #        print(self.dynamic_time[i])
 
         return ans_y, sol_y
 

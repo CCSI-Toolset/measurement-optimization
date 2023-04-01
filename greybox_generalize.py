@@ -5,12 +5,15 @@ from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxM
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxBlock
 
 class LogDetModel(ExternalGreyBoxModel):
-    def __init__(self, num_para=2, use_exact_derivatives=True,verbose=True):
+    def __init__(self, num_para=2, init_fim=None, use_exact_derivatives=True,verbose=True):
         self._use_exact_derivatives = use_exact_derivatives
         self.verbose = verbose
         self.num_para = num_para
         self.num_input = int(num_para + (num_para*num_para-num_para)//2)
-
+        self.init_fim = init_fim
+        print(init_fim)
+        print("initialize with:", self.init_fim)
+        
         # For use with exact Hessian
         self._output_con_mult_values = np.zeros(1)
 
@@ -46,11 +49,17 @@ class LogDetModel(ExternalGreyBoxModel):
                 # get rid of j,i 
                 ele_to_order[(i,j)], ele_to_order[(j,i)] = count, count 
                 str_name = 'ele_'+str(i)+"_"+str(j)
-                # identity matrix 
-                if i==j:
-                    pyomo_block.inputs[str_name].value = 1
+                
+                if self.init_fim is not None:
+                    print("initialized")
+                    pyomo_block.inputs[str_name].value = self.init_fim[str_name]
                 else:
-                    pyomo_block.inputs[str_name].value = 0
+                    print("uninitialized")
+                    # identity matrix 
+                    if i==j:
+                        pyomo_block.inputs[str_name].value = 1
+                    else:
+                        pyomo_block.inputs[str_name].value = 0
                     
                 count += 1 
                 
@@ -79,7 +88,9 @@ class LogDetModel(ExternalGreyBoxModel):
 
         if self.verbose:
             print("\n Consider M =\n",M)
+            print(self._input_values)
             print("   logdet = ",logdet,"\n")
+            print("Eigvals:", np.linalg.eigvals(M))
 
         return np.asarray([logdet], dtype=np.float64)
 
