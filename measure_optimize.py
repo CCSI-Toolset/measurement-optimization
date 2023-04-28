@@ -53,7 +53,8 @@ class DataProcess:
 
     def get_Q_list(self, static_idx, dynamic_idx, Nt):
         """Combine Q for each measurement to be in one Q.
-        measure_info: a pandas dataframe containing measurement information
+        static_idx: list of the index for static measurements 
+        dynamic_idx: list of the index for dynamic measurements
         Nt: number of timepoints is needed to split Q for each measurement 
 
         Return 
@@ -428,22 +429,19 @@ class MeasurementOptimizer:
 
         Parameter 
         ---------
-        :param cost_list: A list, containing the cost of each timepoint of corresponding measurement
         :param mixed_integer: not relaxing integer decisions
         :param obj: "A" or "D" optimality, use trace or determinant of FIM 
         :param fix: if solving as a square problem or with DOFs 
         :param sparse: if using sparse set to define decisions and FIM, or not 
         :param num_dynamic_t_name: a list of the exact time points for the dynamic-cost measurements time points 
-        :param discretize_time: a scalar number of the time interval between two manual measurements 
-        :param end_time: a scalar number, the end time of measurements 
         :param manual_number: the maximum number of human measurements for dynamic measurements
         :param budget: total budget
-        :param dynamic_install_cost: a list of the installation costs for dynamic-cost measurements 
-        :param each_manual_number: the maximum number of human measurements for each dynamic-cost measurement 
         :param init_cov_y: initialize decision variables 
         :param initial_fim: initialize FIM
         :param dynamic_install_initial: initialize if_dynamic_install
-        :param static_dynamic_pair: a list of the name of measurements, that are selected as either dynamic or static measurements. 
+        :param static_dynamic_pair: a list of the name of measurements, that are selected as either dynamic or static measurements.
+        :param time_interval_all_dynamic: if True, the minimal time interval applies for all dynamical measurements 
+        :param total_manual_num_init: initialize the total number of dynamical timepoints selected 
         """
 
         m = pyo.ConcreteModel()
@@ -579,17 +577,26 @@ class MeasurementOptimizer:
             return m.cost == sum(m.cov_y[i,i]*self.cost_list[i] for i in m.NumRes)+sum(m.if_install_dynamic[j]*self.dynamic_install_cost[j-self.num_static] for j in m.DimDynamic)
         
         def cost_limit(m):
+            """Total cost smaller than the given budget
+            """
             return m.cost <= budget 
 
         def total_dynamic_con(m):
+            """total number of manual dynamical measurements number
+            """
             return m.TotalDynamic<=manual_number
         
         def dynamic_fix_yd(m,i,j):
+            """if the install cost of one dynamical measurements should be considered 
+            If no timepoints are chosen, there is no need to include this installation cost 
+            """
             # map measurement index i to its dynamic_flatten index
             start = self.num_static + (i-self.num_static)*self.dynamic_Nt+j
             return m.if_install_dynamic[i] >= m.cov_y[start,start]
         
         def dynamic_fix_yd_con2(m,i):
+            """if the install cost of one dynamical measurements should be considered 
+            """
             start = self.num_static + (i-self.num_static)*self.dynamic_Nt
             end = self.num_static + (i-self.num_static+1)*self.dynamic_Nt
             return m.if_install_dynamic[i] <= sum(m.cov_y[j,j] for j in range(start, end))
@@ -606,10 +613,11 @@ class MeasurementOptimizer:
             m.TotalFIM_con = pyo.Constraint(m.DimFIM, m.DimFIM, rule=eval_fim)
         
         if not fix: 
-
+            # total dynamic timepoints number
             m.TotalDynamic = pyo.Var(initialize=total_manual_num_init)
             m.manual = pyo.Constraint(rule=total_dynamic)
-        
+            
+            # this is used for better performances for MIP
             if mixed_integer and not sparse:
                 m.sym = pyo.Constraint(m.NumRes, m.NumRes, rule=symmetry)
             
@@ -637,18 +645,22 @@ class MeasurementOptimizer:
 
             # each manual number smaller than 5 
             if self.each_manual_number is not None:
-                
+                # loop over dynamical measurements 
                 for i in range(self.num_dynamic):
                     def dynamic_manual_num(m):
-                        start = self.num_static + i*self.dynamic_Nt
-                        end = self.num_static + (i+1)*self.dynamic_Nt
+                        """the timepoints for each dynamical measurement should be smaller than a given limit 
+                        """
+                        start = self.num_static + i*self.dynamic_Nt # the start index of this dynamical measurement
+                        end = self.num_static + (i+1)*self.dynamic_Nt # the end index of this dynamical measurement
                         cost = sum(m.cov_y[j,j] for j in range(start, end))
                         return cost <= self.each_manual_number[0]
                     
                     con_name = "con"+str(i)
                     m.add_component(con_name, pyo.Constraint(expr=dynamic_manual_num))
-
+            
+            # if some measurements can only be dynamic or static
             if static_dynamic_pair is not None: 
+                # loop over the index of the static, and dynamic measurements 
                 for i, pair in enumerate(static_dynamic_pair):
                     def static_dynamic_pair_con(m):
                         return m.if_install_dynamic[pair[1]]+m.cov_y[pair[0],pair[0]] <= 1
@@ -656,7 +668,9 @@ class MeasurementOptimizer:
                     con_name = "con_sta_dyn"+str(i)
                     m.add_component(con_name, pyo.Constraint(expr=static_dynamic_pair_con))
 
+            # if there is minimal interval constraint
             if self.min_time_interval is not None:
+                # if this constraint applies to all dynamic measurements
                 if time_interval_all_dynamic: 
                     for t in range(self.dynamic_Nt):
                         # end time is an open end of the region, so another constraint needs to be added to include end_time
@@ -664,6 +678,7 @@ class MeasurementOptimizer:
                         def discretizer(m):
                             sumi = 0
                             count = 0 
+                            # get the timepoints in this interval
                             while (count+t<self.dynamic_Nt) and (dynamic_time[count+t]-dynamic_time[t])<self.min_time_interval[0]:
                                 for i in m.DimDynamic:
                                     surro_idx = self.num_static + (i-self.num_static)*self.dynamic_Nt + t + count
@@ -674,6 +689,7 @@ class MeasurementOptimizer:
 
                         con_name="con_discreti_"+str(i)+str(t)
                         m.add_component(con_name, pyo.Constraint(expr=discretizer))
+                # if this constraint applies to each dynamic measurements, in a local way
                 else:
                     for i in m.DimDynamic:
                         for t in range(self.dynamic_Nt):
@@ -684,6 +700,7 @@ class MeasurementOptimizer:
                                 sumi = 0
 
                                 count = 0 
+                                # get timepoints in this interval
                                 while (count+t<self.dynamic_Nt) and (dynamic_time[count+t]-dynamic_time[t])<self.min_time_interval[0]:
                                     surro_idx = self.num_static + (i-self.num_static)*self.dynamic_Nt + t + count
                                     sumi += m.cov_y[surro_idx, surro_idx]
