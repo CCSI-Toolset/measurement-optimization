@@ -10,7 +10,7 @@ from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxM
 from enum import Enum
 from idaes.core.util.model_diagnostics import DegeneracyHunter
 
-class covariance_lib(Enum): 
+class CovarianceStructure(Enum): 
     """Covariance definition 
     if identity: error covariance matrix is an identity matrix
     if variance: a list, each element is the corresponding variance, a.k.a. diagonal elements.
@@ -33,28 +33,53 @@ class covariance_lib(Enum):
     @classmethod
     def has_value(cls, value):
         return value in cls._value2member_map_
+    
+class ObjectiveLib(Enum):
+    """
+    Objective function library
+    
+    if A: minimize the trace of FIM
+    if D: minimize the determinant of FIM
+    """
+    A = 0 
+    D = 1 
+    @classmethod
+    def has_value(cls, value):
+        return value in cls._value2member_map_
+
 
 class DataProcess:
+    """Data processing class. Only process a certain format of CSV file."""
     def __init__(self) -> None:
         return 
     
-    def read_jaco(self, filename):
-        """Read Jacobian from csv file 
+    def read_jacobian(self, filename):
+        """Read jacobian from csv file 
+
+        This csv file should have the following format:
+        columns: parameters to be estimated
+        rows: timepoints
+        data: jacobian values
         """
-        jaco_info = pd.read_csv(filename, index_col=False)
-        jaco_list = np.asarray(jaco_info)
+        jacobian_list = pd.read_csv(filename, index_col=False)
+        # it needs to be converted to numpy array or it gives error
+        jacobian_list = np.asarray(jacobian_list) 
 
-        jaco = []
-        for i in range(len(jaco_list)):
+        # convert to list of lists to separate different measurements
+        jacobian = []
+        # first columns are parameter names in string, so to be removed
+        for i in range(len(jacobian_list)):
             # jacobian remove fisrt column which is column names
-            jaco.append(list(jaco_list[i][1:]))
+            jacobian.append(list(jacobian_list[i][1:]))
 
-        self.jaco = jaco
+        self.jacobian = jacobian
 
-    def get_Q_list(self, static_idx, dynamic_idx, Nt):
+    def get_Q_list(self, static_measurement_idx, dynamic_measurement_idx, Nt):
         """Combine Q for each measurement to be in one Q.
-        static_idx: list of the index for static measurements 
-        dynamic_idx: list of the index for dynamic measurements
+        Q is a list of lists containing jacobian matrix.
+        each list contains an Nt*n_parameters elements, which is the sensitivity matrix Q for measurement m
+        static_measurement_idx: list of the index for static measurements 
+        dynamic_measurement_idx: list of the index for dynamic measurements
         Nt: number of timepoints is needed to split Q for each measurement 
 
         Return 
@@ -65,84 +90,90 @@ class DataProcess:
 
         Q = [] 
         # if there is static-cost measurements
-        if static_idx is not None:
-            for i in static_idx:
-                Q.append(self._split_jaco(i))
+        if static_measurement_idx is not None:
+            for i in static_measurement_idx:
+                Q.append(self._split_jacobian(i))
         # if there is dynamic-cost measurements
-        if dynamic_idx is not None:
-            for j in dynamic_idx:
-                Q.append(self._split_jaco(j))
+        if dynamic_measurement_idx is not None:
+            for j in dynamic_measurement_idx:
+                Q.append(self._split_jacobian(j))
 
         return Q 
 
 
-    def _split_jaco(self, idx):
-        """Split Jacobian according to measurements
+    def _split_jacobian(self, idx):
+        """Split jacobian according to measurements
         idx: idx of measurements
 
         Return: 
-        jaco_idx: a list of jacobian information for one measurement 
+        jacobian_idx: a list of integers. jacobian information for one measurement 
+        they are slicing indices for jacobian matrix
         """
-        jaco_idx = self.jaco[idx*self.Nt:(idx+1)*self.Nt][:]
-        return jaco_idx 
+        jacobian_idx = self.jacobian[idx*self.Nt:(idx+1)*self.Nt][:]
+        return jacobian_idx 
     
 
 
 class MeasurementOptimizer:
-    def __init__(self, Q, measure_info, error_cov=None, error_opt=covariance_lib.identity, verbose=True):
+    def __init__(self, Q, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, verbose=True):
         """
         Argument
         --------
-        :param Q: a list of lists containing Jacobian matrix. 
-            It contains m lists, m is the No. of meausrements 
-            Each list contains an N_t_m*num_param elements, which is the sensitivity matrix Q for measurement m 
-        :param measure_info: a pandas DataFrame containing measurement information.
-        :param error_cov: 
+        :param Q: a list of lists 
+            containing jacobian matrix. 
+            It contains m lists, m is the number of meausrements 
+            Each list contains an N_t_m*n_parameters elements, which is the sensitivity matrix Q for measurement m 
+        :param measure_info: a pandas DataFrame 
+            containing measurement information.
+            columns: ['name', 'Q_index', 'dynamic_cost', 'static_cost', 'min_time_interval', 'max_manual_number']
+        :param error_cov: a list of lists
             defined error covariance matrix here
-            if covariance_lib.identity: error covariance matrix is an identity matrix
-            if covariance_lib.variance: a list, each element is the corresponding variance, a.k.a. diagonal elements.
+            if CovarianceStructure.identity: error covariance matrix is an identity matrix
+            if CovarianceStructure.variance: a list, each element is the corresponding variance, a.k.a. diagonal elements.
                 Shape: Sum(Nt) 
-            if covariance_lib.time_correlation: a list of lists, each element is the error covariances
+            if CovarianceStructure.time_correlation: a list of lists, each element is the error covariances
                 This option assumes covariances not between measurements, but between timepoints for one measurement
                 Shape: Nm * (Nt_m * Nt_m)
-            if covariance_lib.measure_correlation: a list of list, covariance matrix for a single time steps 
+            if CovarianceStructure.measure_correlation: a list of list, covariance matrix for a single time steps 
                 This option assumes the covariances between measurements at the same timestep in a time-invariant way 
                 Shape: Nm * Nm
-            if covariance_lib.time_measure_correlation: a list of list, covariance matrix for the flattened measurements 
+            if CovarianceStructure.time_measure_correlation: a list of list, covariance matrix for the flattened measurements 
                 Shape: sum(Nt) * sum(Nt) 
-        :param: error_opt:
-            can choose from None, 1, 2, 3, 4. See above comments.
+        :param: error_opt: CovarianceStructure
+            can choose from identity, variance, time_correlation, measure_correlation, time_measure_correlation. See above comments.
         :param verbose: if print debug sentences
         """
         # # of static and dynamic measurements
-        static_idx = measure_info[measure_info['dynamic_cost']==0].index.values.tolist()
-        dynamic_idx = measure_info[measure_info['dynamic_cost']!=0].index.values.tolist()
+        static_measurement_idx = measure_info[measure_info['dynamic_cost']==0].index.values.tolist()
+        dynamic_measurement_idx = measure_info[measure_info['dynamic_cost']!=0].index.values.tolist()
         # store static and dynamic measurements dataframe 
         self.dynamic_cost_measure_info = measure_info[measure_info['dynamic_cost']!=0]
         self.static_cost_measure_info = measure_info[measure_info['dynamic_cost']==0]
 
         self.measure_info = measure_info
-        self.num_static = len(static_idx)
-        self.static_idx = static_idx
-        self.num_dynamic = len(dynamic_idx)
-        self.dynamic_idx = dynamic_idx
-        self.num_measure = len(Q)
-        assert self.num_measure==self.num_dynamic+self.num_static
+        # check measure_info
+        self._check_measure_info()  
+        self.n_static_measurements = len(static_measurement_idx)
+        self.static_measurement_idx = static_measurement_idx
+        self.n_dynamic_measurements = len(dynamic_measurement_idx)
+        self.dynamic_measurement_idx = dynamic_measurement_idx
+        self.n_total_measurements = len(Q)
+        assert self.n_total_measurements==self.n_dynamic_measurements+self.n_static_measurements
 
         # measurements can have different # of timepoints
         # Nt key: measurement index, value: # of timepoints for this measure
         self.Nt = {}
-        for i in range(self.num_measure):
+        for i in range(self.n_total_measurements):
             self.Nt[i] = len(Q[i])
         # total number of all measurements and all time points
         self.total_num_time = sum(self.Nt.values())
 
-        self.num_param = len(Q[0][0])
+        self.n_parameters = len(Q[0][0])
         self.verbose = verbose
         self.measure_name = measure_info['name'].tolist() # measurement name list 
         self.cost_list = self.static_cost_measure_info['static_cost'].tolist() # static measurements list
         # add dynamic-cost measurements list 
-        for i in dynamic_idx:
+        for i in dynamic_measurement_idx:
             q_ind = measure_info.iloc[i]['Q_index']
             # loop over dynamic-cost measurements time points
             for t in range(self.Nt[q_ind]):
@@ -171,8 +202,47 @@ class MeasurementOptimizer:
         self._dynamic_flatten(Q)
 
         # build and check PSD of Sigma
+        # check sigma inputs 
+        self._check_sigma(error_cov, error_opt)
         Sigma = self._build_sigma(error_cov, error_opt)
         self._split_sigma(Sigma)
+
+
+    def _check_measure_info(self):
+        if "name" not in self.measure_info:
+            raise ValueError("measure_info must have a column named 'name'")
+        if "Q_index" not in self.measure_info:
+            raise ValueError("measure_info must have a column named 'Q_index'")
+        if "dynamic_cost" not in self.measure_info:
+            raise ValueError("measure_info must have a column named 'dynamic_cost'")
+        if "static_cost" not in self.measure_info:
+            raise ValueError("measure_info must have a column named 'static_cost'")
+        if "min_time_interval" not in self.measure_info:
+            raise ValueError("measure_info must have a column named 'min_time_interval'")
+        if "max_manual_number" not in self.measure_info:
+            raise ValueError("measure_info must have a column named 'max_manual_number'")
+        
+    def _check_sigma(self, error_cov, error_option):
+        """ Check sigma inputs shape and values
+        """
+        # identity matrix 
+        if (error_option==CovarianceStructure.identity) or (error_option==CovarianceStructure.variance):
+            if error_cov is not None: 
+                assert(len(error_cov)==self.total_num_time), "error_cov must have the same length as total_num_time"
+
+        elif error_option == CovarianceStructure.time_correlation: 
+            assert(len(error_cov)==self.n_total_measurements),  "error_cov must have the same length as n_total_measurements"
+            for i in range(self.n_total_measurements):
+                assert(len(error_cov[0])==self.Nt[i]),  "error_cov[i] must have the shape Nt[i]*Nt[i]"
+                assert(len(error_cov[0][0])==self.Nt[i]), "error_cov[i] must have the shape Nt[i]*Nt[i]"
+
+        elif error_option == CovarianceStructure.measure_correlation:
+            assert(len(error_cov)==self.n_total_measurements),  "error_cov must have the same length as n_total_measurements"
+            assert(len(error_cov[0])==self.n_total_measurements),  "error_cov[i] must have the same length as n_total_measurements"
+     
+        elif error_option == CovarianceStructure.time_measure_correlation:
+            assert(len(error_cov)==self.total_num_time),  "error_cov must have the shape total_num_time*total_num_time"
+            assert(len(error_cov[0])==self.total_num_time),  "error_cov must have the shape total_num_time*total_num_time"
 
     def _dynamic_flatten(self, Q):
         """Update dynamic flattened matrix index. 
@@ -205,8 +275,8 @@ class MeasurementOptimizer:
         count1 = 0
         # counter for flatten
         count2 = 0
-        for i in range(self.num_measure):
-            if i in self.static_idx: # static measurements are not flattened for dynamic flatten
+        for i in range(self.n_total_measurements):
+            if i in self.static_measurement_idx: # static measurements are not flattened for dynamic flatten
                 # dynamic_flatten
                 Q_dynamic_flatten.append(Q[i])
                 self.head_pos_dynamic_flatten[i] = count1 
@@ -267,15 +337,15 @@ class MeasurementOptimizer:
         
         Sigma = np.zeros((self.total_num_time, self.total_num_time))
         # identity matrix 
-        if (error_option==covariance_lib.identity) or (error_option==covariance_lib.variance):
+        if (error_option==CovarianceStructure.identity) or (error_option==CovarianceStructure.variance):
             if not error_cov:
                 error_cov = [1]*self.total_num_time
             # loop over diagonal elements and change
             for i in range(self.total_num_time):
                 Sigma[i,i] = error_cov[i]
 
-        elif error_option == covariance_lib.time_correlation: 
-            for i in range(self.num_measure):
+        elif error_option == CovarianceStructure.time_correlation: 
+            for i in range(self.n_total_measurements):
                 # give the error covariance to Sigma 
                 sigma_i_start = self.head_pos_flatten[i]
                 # loop over all timepoints for measurement i 
@@ -283,10 +353,10 @@ class MeasurementOptimizer:
                     for t2 in range(self.Nt[i]):
                         Sigma[sigma_i_start+t1, sigma_i_start+t2] = error_cov[i][t1][t2]
 
-        elif error_option == covariance_lib.measure_correlation:
+        elif error_option == CovarianceStructure.measure_correlation:
             print("Covariances are between measurements at the same time.")
-            for i in range(self.num_measure):
-                for j in range(self.num_measure):
+            for i in range(self.n_total_measurements):
+                for j in range(self.n_total_measurements):
                     cov_ij = error_cov[i][j]
                     head_i = self.head_pos_flatten[i]
                     head_j = self.head_pos_flatten[j]
@@ -294,7 +364,7 @@ class MeasurementOptimizer:
                     for t in range(min(self.Nt[i], self.Nt[j])):
                         Sigma[t+head_i, t+head_j] = cov_ij 
      
-        elif error_option == covariance_lib.time_measure_correlation:
+        elif error_option == CovarianceStructure.time_measure_correlation:
             Sigma = np.asarray(error_cov)
 
         self.Sigma = Sigma
@@ -367,17 +437,17 @@ class MeasurementOptimizer:
                 # static*dynamic
                 elif i in self.static_idx_dynamic_flatten and j in self.dynamic_idx_dynamic_flatten:
                     #print("static*dynamic, cov:", self.Sigma_inv[(i,j)])
-                    unit = np.asarray(self.Q_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.Q_dynamic_flatten[j]).reshape(1,self.num_param)
+                    unit = np.asarray(self.Q_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.Q_dynamic_flatten[j]).reshape(1,self.n_parameters)
 
                 # static*dynamic
                 elif i in self.dynamic_idx_dynamic_flatten and j in self.static_idx_dynamic_flatten:
                     #print("static*dynamic, cov:", self.Sigma_inv[(i,j)])
-                    unit = np.asarray(self.Q_dynamic_flatten[i]).reshape(1, self.num_param).T@self.Sigma_inv[(i,j)].T@np.asarray(self.Q_dynamic_flatten[j])
+                    unit = np.asarray(self.Q_dynamic_flatten[i]).reshape(1, self.n_parameters).T@self.Sigma_inv[(i,j)].T@np.asarray(self.Q_dynamic_flatten[j])
 
                 # dynamic*dynamic
                 else:
                     #print("dynamic*dynamic, cov:", self.Sigma_inv[(i,j)])
-                    unit = self.Sigma_inv[(i,j)]*np.asarray(self.Q_dynamic_flatten[i]).reshape(1, self.num_param).T@np.asarray(self.Q_dynamic_flatten[j]).reshape(1,self.num_param)
+                    unit = self.Sigma_inv[(i,j)]*np.asarray(self.Q_dynamic_flatten[i]).reshape(1, self.n_parameters).T@np.asarray(self.Q_dynamic_flatten[j]).reshape(1,self.n_parameters)
 
                 self.fim_collection.append(unit.tolist())
 
@@ -415,8 +485,8 @@ class MeasurementOptimizer:
         print('Min eig:', min(eig), '; log_e(min_eig):', np.log(min(eig)), '; log_10(min_eig):', np.log10(min(eig)))
         print('Cond:', max(eig)/min(eig))
 
-    def continuous_optimization(self, mixed_integer=False, obj="A", 
-                                fix=False, sparse=False,
+    def continuous_optimization(self, mixed_integer=False, obj=ObjectiveLib.A, 
+                                fix=False, upper_diagonal_only=False,
                                 num_dynamic_t_name = None, 
                                 manual_number=20, budget=100, 
                                 init_cov_y=None, initial_fim=None,
@@ -427,35 +497,49 @@ class MeasurementOptimizer:
         
         """Continuous optimization problem formulation. 
 
-        Parameter 
+        Arguments
         ---------
-        :param mixed_integer: not relaxing integer decisions
-        :param obj: "A" or "D" optimality, use trace or determinant of FIM 
-        :param fix: if solving as a square problem or with DOFs 
-        :param sparse: if using sparse set to define decisions and FIM, or not 
-        :param num_dynamic_t_name: a list of the exact time points for the dynamic-cost measurements time points 
-        :param manual_number: the maximum number of human measurements for dynamic measurements
-        :param budget: total budget
-        :param init_cov_y: initialize decision variables 
-        :param initial_fim: initialize FIM
-        :param dynamic_install_initial: initialize if_dynamic_install
-        :param static_dynamic_pair: a list of the name of measurements, that are selected as either dynamic or static measurements.
-        :param time_interval_all_dynamic: if True, the minimal time interval applies for all dynamical measurements 
-        :param total_manual_num_init: initialize the total number of dynamical timepoints selected 
+        :param mixed_integer: boolean 
+            not relaxing integer decisions
+        :param obj: Enum
+            "A" or "D" optimality, use trace or determinant of FIM 
+        :param fix: boolean
+            if solving as a square problem or with DOFs 
+        :param upper_diagonal_only: boolean
+            if using upper_diagonal_only set to define decisions and FIM, or not 
+        :param num_dynamic_t_name: list
+            a list of the exact time points for the dynamic-cost measurements time points 
+        :param manual_number: integer 
+            the maximum number of human measurements for dynamic measurements
+        :param budget: integer
+            total budget
+        :param init_cov_y: list of lists
+            initialize decision variables 
+        :param initial_fim: list of lists
+            initialize FIM
+        :param dynamic_install_initial: list
+            initialize if_dynamic_install
+        :param static_dynamic_pair: list of lists
+            a list of the name of measurements, that are selected as either dynamic or static measurements.
+        :param time_interval_all_dynamic: boolean
+            if True, the minimal time interval applies for all dynamical measurements 
+        :param total_manual_num_init: integer
+            initialize the total number of dynamical timepoints selected 
         """
 
         m = pyo.ConcreteModel()
 
-        # response set
-        m.NumRes = pyo.Set(initialize=range(self.num_measure_dynamic_flatten))
+        # measurements set
+        m.n_responses = pyo.Set(initialize=range(self.num_measure_dynamic_flatten))
         # FIM set 
-        m.DimFIM = pyo.Set(initialize=range(self.num_param))
+        m.DimFIM = pyo.Set(initialize=range(self.n_parameters))
 
         # dynamic measurements parameters 
         # dynamic measurement number of timepoints 
-        self.dynamic_Nt = self.Nt[self.num_static]
+        self.dynamic_Nt = self.Nt[self.n_static_measurements]
         # dynamic measurement index number 
-        m.DimDynamic = pyo.Set(initialize=range(self.num_static, self.num_measure))
+        # Pyomo model explicitly numbers all of the static measurements first and then all of the dynmaic measurements
+        m.DimDynamic = pyo.Set(initialize=range(self.n_static_measurements, self.n_total_measurements))
         # turn dynamic measurement number of timepoints into a pyomo set 
         m.DimDynamic_t = pyo.Set(initialize=range(self.dynamic_Nt)) 
         
@@ -475,27 +559,27 @@ class MeasurementOptimizer:
         else:
             initialize=identity
 
-        # sparse NumRes, only define the upper triangle of symmetric matrices 
-        def NumReshalf_init(m):
-            return ((a,b) for a in m.NumRes for b in range(a, self.num_measure_dynamic_flatten))
+        # only define the upper triangle of symmetric matrices 
+        def n_responses_half_init(m):
+            return ((a,b) for a in m.n_responses for b in range(a, self.num_measure_dynamic_flatten))
         
         def DimFIMhalf_init(m):
-            return ((a,b) for a in m.DimFIM for b in range(a, self.num_param))
+            return ((a,b) for a in m.DimFIM for b in range(a, self.n_parameters))
         
-        m.NumRes_half = pyo.Set(dimen=2, initialize=NumReshalf_init)
+        m.responses_upper_diagonal = pyo.Set(dimen=2, initialize=n_responses_half_init)
         m.DimFIM_half = pyo.Set(dimen=2, initialize=DimFIMhalf_init)
         
         # decision variables
         if mixed_integer:
-            if sparse:
-                m.cov_y = pyo.Var(m.NumRes_half, initialize=initialize, bounds=(0,1), within=pyo.Binary)
+            if upper_diagonal_only:
+                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(0,1), within=pyo.Binary)
             else:
-                m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, bounds=(0,1), within=pyo.Binary)
+                m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, bounds=(0,1), within=pyo.Binary)
         else:
-            if sparse:
-                m.cov_y = pyo.Var(m.NumRes_half, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
+            if upper_diagonal_only:
+                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(1E-6,1), within=pyo.Reals)
             else:
-                m.cov_y = pyo.Var(m.NumRes, m.NumRes, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
+                m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
         
         # use a fix option to compute results for square problems with given y 
         if fix:
@@ -507,12 +591,12 @@ class MeasurementOptimizer:
         if initial_fim is not None:
             # Initialize dictionary for grey-box model
             fim_initial_dict = {}
-            for i in range(self.num_param):
-                for j in range(i, self.num_param):
+            for i in range(self.n_parameters):
+                for j in range(i, self.n_parameters):
                     str_name = 'ele_'+str(i)+"_"+str(j)
                     fim_initial_dict[str_name] = initial_fim[i,j] 
         
-        if sparse:
+        if upper_diagonal_only:
             m.TotalFIM = pyo.Var(m.DimFIM_half, initialize=init_fim)
         else:
             m.TotalFIM = pyo.Var(m.DimFIM, m.DimFIM, initialize=init_fim)
@@ -521,13 +605,14 @@ class MeasurementOptimizer:
         def eval_fim(m, a, b):
             """
             Evaluate fim 
+            FIM = sum(cov_y[i,j]*unit FIM[i,j]) for all i, j in n_responses
 
             a, b: dimensions for FIM, iterate in parameter set 
             """
             if a <= b: 
                 summi = 0 
-                for i in m.NumRes:
-                    for j in m.NumRes:
+                for i in m.n_responses:
+                    for j in m.n_responses:
                         if j>=i:
                             summi += m.cov_y[i,j]*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
                         else:
@@ -538,7 +623,7 @@ class MeasurementOptimizer:
             
     
         def total_dynamic(m):
-            return m.TotalDynamic==sum(m.cov_y[i,i] for i in range(self.num_static, self.num_measure_dynamic_flatten))
+            return m.total_number_dynamic_measurements==sum(m.cov_y[i,i] for i in range(self.n_static_measurements, self.num_measure_dynamic_flatten))
             
         ### cov_y constraints
         def y_covy1(m, a, b):
@@ -574,7 +659,7 @@ class MeasurementOptimizer:
             """Compute cost
             cost = static-cost measurement cost + dynamic-cost measurement installation cost + dynamic-cost meausrement timepoint cost 
             """
-            return m.cost == sum(m.cov_y[i,i]*self.cost_list[i] for i in m.NumRes)+sum(m.if_install_dynamic[j]*self.dynamic_install_cost[j-self.num_static] for j in m.DimDynamic)
+            return m.cost == sum(m.cov_y[i,i]*self.cost_list[i] for i in m.n_responses)+sum(m.if_install_dynamic[j]*self.dynamic_install_cost[j-self.n_static_measurements] for j in m.DimDynamic)
         
         def cost_limit(m):
             """Total cost smaller than the given budget
@@ -584,46 +669,46 @@ class MeasurementOptimizer:
         def total_dynamic_con(m):
             """total number of manual dynamical measurements number
             """
-            return m.TotalDynamic<=manual_number
+            return m.total_number_dynamic_measurements<=manual_number
         
         def dynamic_fix_yd(m,i,j):
             """if the install cost of one dynamical measurements should be considered 
             If no timepoints are chosen, there is no need to include this installation cost 
             """
             # map measurement index i to its dynamic_flatten index
-            start = self.num_static + (i-self.num_static)*self.dynamic_Nt+j
+            start = self.n_static_measurements + (i-self.n_static_measurements)*self.dynamic_Nt+j
             return m.if_install_dynamic[i] >= m.cov_y[start,start]
         
         def dynamic_fix_yd_con2(m,i):
             """if the install cost of one dynamical measurements should be considered 
             """
-            start = self.num_static + (i-self.num_static)*self.dynamic_Nt
-            end = self.num_static + (i-self.num_static+1)*self.dynamic_Nt
+            start = self.n_static_measurements + (i-self.n_static_measurements)*self.dynamic_Nt
+            end = self.n_static_measurements + (i-self.n_static_measurements+1)*self.dynamic_Nt
             return m.if_install_dynamic[i] <= sum(m.cov_y[j,j] for j in range(start, end))
         
-        # set up Design criterion
-        def ComputeTrace(m):
+        # set up design criterion
+        def compute_trace(m):
             sum_x = sum(m.TotalFIM[j,j] for j in m.DimFIM)
             return sum_x
 
         # add constraints
-        if sparse:
-            m.TotalFIM_con = pyo.Constraint(m.DimFIM_half, rule=eval_fim)
+        if upper_diagonal_only:
+            m.total_fim_constraint = pyo.Constraint(m.DimFIM_half, rule=eval_fim)
         else:
-            m.TotalFIM_con = pyo.Constraint(m.DimFIM, m.DimFIM, rule=eval_fim)
+            m.total_fim_constraint = pyo.Constraint(m.DimFIM, m.DimFIM, rule=eval_fim)
         
         if not fix: 
             # total dynamic timepoints number
-            m.TotalDynamic = pyo.Var(initialize=total_manual_num_init)
+            m.total_number_dynamic_measurements = pyo.Var(initialize=total_manual_num_init)
             m.manual = pyo.Constraint(rule=total_dynamic)
             
             # this is used for better performances for MIP
-            if mixed_integer and not sparse:
-                m.sym = pyo.Constraint(m.NumRes, m.NumRes, rule=symmetry)
+            if mixed_integer and not upper_diagonal_only:
+                m.sym = pyo.Constraint(m.n_responses, m.n_responses, rule=symmetry)
             
-            m.cov1 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy1)
-            m.cov2 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy2)
-            m.cov3 = pyo.Constraint(m.NumRes, m.NumRes, rule=y_covy3)
+            m.cov1 = pyo.Constraint(m.n_responses, m.n_responses, rule=y_covy1)
+            m.cov2 = pyo.Constraint(m.n_responses, m.n_responses, rule=y_covy2)
+            m.cov3 = pyo.Constraint(m.n_responses, m.n_responses, rule=y_covy3)
                 
             m.con_manual = pyo.Constraint(rule=total_dynamic_con)
 
@@ -634,7 +719,7 @@ class MeasurementOptimizer:
                 else:
                     print(j)
                     print(dynamic_install_initial)
-                    return dynamic_install_initial[j-self.num_static]
+                    return dynamic_install_initial[j-self.n_static_measurements]
 
             if mixed_integer:
                 m.if_install_dynamic = pyo.Var(m.DimDynamic, initialize=dynamic_install_init, bounds=(0,1), within=pyo.Binary)
@@ -643,15 +728,15 @@ class MeasurementOptimizer:
             m.dynamic_cost = pyo.Constraint(m.DimDynamic, m.DimDynamic_t, rule=dynamic_fix_yd)
             m.dynamic_con2 = pyo.Constraint(m.DimDynamic, rule=dynamic_fix_yd_con2)
 
-            # each manual number smaller than 5 
+            # if each manual number smaller than a given limit
             if self.each_manual_number is not None:
                 # loop over dynamical measurements 
-                for i in range(self.num_dynamic):
+                for i in range(self.n_dynamic_measurements):
                     def dynamic_manual_num(m):
                         """the timepoints for each dynamical measurement should be smaller than a given limit 
                         """
-                        start = self.num_static + i*self.dynamic_Nt # the start index of this dynamical measurement
-                        end = self.num_static + (i+1)*self.dynamic_Nt # the end index of this dynamical measurement
+                        start = self.n_static_measurements + i*self.dynamic_Nt # the start index of this dynamical measurement
+                        end = self.n_static_measurements + (i+1)*self.dynamic_Nt # the end index of this dynamical measurement
                         cost = sum(m.cov_y[j,j] for j in range(start, end))
                         return cost <= self.each_manual_number[0]
                     
@@ -681,7 +766,7 @@ class MeasurementOptimizer:
                             # get the timepoints in this interval
                             while (count+t<self.dynamic_Nt) and (dynamic_time[count+t]-dynamic_time[t])<self.min_time_interval[0]:
                                 for i in m.DimDynamic:
-                                    surro_idx = self.num_static + (i-self.num_static)*self.dynamic_Nt + t + count
+                                    surro_idx = self.n_static_measurements + (i-self.n_static_measurements)*self.dynamic_Nt + t + count
                                     sumi += m.cov_y[surro_idx, surro_idx]
                                 count += 1 
 
@@ -702,7 +787,7 @@ class MeasurementOptimizer:
                                 count = 0 
                                 # get timepoints in this interval
                                 while (count+t<self.dynamic_Nt) and (dynamic_time[count+t]-dynamic_time[t])<self.min_time_interval[0]:
-                                    surro_idx = self.num_static + (i-self.num_static)*self.dynamic_Nt + t + count
+                                    surro_idx = self.n_static_measurements + (i-self.n_static_measurements)*self.dynamic_Nt + t + count
                                     sumi += m.cov_y[surro_idx, surro_idx]
                                     count += 1 
 
@@ -717,17 +802,17 @@ class MeasurementOptimizer:
             m.budget_limit = pyo.Constraint(rule=cost_limit)
 
         # set objective 
-        if obj == "A":
-            m.Obj = pyo.Objective(rule=ComputeTrace, sense=pyo.maximize)
+        if obj == ObjectiveLib.A:
+            m.Obj = pyo.Objective(rule=compute_trace, sense=pyo.maximize)
 
-        elif obj == "D":
+        elif obj == ObjectiveLib.D:
 
             def _model_i(b):
                 self.build_model_external(b, fim_init=fim_initial_dict)
             m.my_block = pyo.Block(rule=_model_i)
 
-            for i in range(self.num_param):
-                for j in range(i, self.num_param):
+            for i in range(self.n_parameters):
+                for j in range(i, self.n_parameters):
                     def eq_fim(m):
                         return m.TotalFIM[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
                     
@@ -741,7 +826,7 @@ class MeasurementOptimizer:
 
 
     def build_model_external(self, m, fim_init=None):
-        ex_model = LogDetModel(num_para=self.num_param, init_fim=fim_init)
+        ex_model = LogDetModel(num_para=self.n_parameters, init_fim=fim_init)
         m.egb = ExternalGreyBoxBlock()
         m.egb.set_external_model(ex_model)
 
@@ -884,24 +969,24 @@ class MeasurementOptimizer:
         # round small errors
         for i in range(len(ans_y)):
             for j in range(len(ans_y[0])):
-                if ans_y[i][j] < 0.05:
+                if ans_y[i][j] < 0.01:
                     ans_y[i][j] = int(0)
-                elif ans_y[i][j] > 0.95:
+                elif ans_y[i][j] > 0.99:
                     ans_y[i][j] = int(1)
                 else: 
                     ans_y[i][j] = round(ans_y[i][j], 2)
 
-        for c in range(self.num_static):
+        for c in range(self.n_static_measurements):
             print(self.measure_name[c], ": ", ans_y[c,c])
 
-        sol_y = np.asarray([ans_y[i,i] for i in range(self.num_static, self.num_measure_dynamic_flatten)])
+        sol_y = np.asarray([ans_y[i,i] for i in range(self.n_static_measurements, self.num_measure_dynamic_flatten)])
 
-        sol_y = np.reshape(sol_y, (self.num_dynamic, self.dynamic_Nt))
+        sol_y = np.reshape(sol_y, (self.n_dynamic_measurements, self.dynamic_Nt))
         np.around(sol_y)
 
         for r in range(len(sol_y)):
             #print(dynamic_name[r], ": ", sol_y[r])
-            print(self.measure_name[r+self.num_static])
+            print(self.measure_name[r+self.n_static_measurements])
             print(sol_y[r])
             #for i, t in enumerate(sol_y[r]):
             #    if t>0.5:
