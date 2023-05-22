@@ -8,7 +8,7 @@ import pyomo.environ as pyo
 from greybox_generalize import LogDetModel
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel, ExternalGreyBoxBlock
 from enum import Enum
-from idaes.core.util.model_diagnostics import DegeneracyHunter
+#from idaes.core.util.model_diagnostics import DegeneracyHunter
 
 class CovarianceStructure(Enum): 
     """Covariance definition 
@@ -61,9 +61,9 @@ class DataProcess:
         rows: timepoints
         data: jacobian values
         """
-        jacobian_list = pd.read_csv(filename, index_col=False)
+        jacobian_info = pd.read_csv(filename, index_col=False)
         # it needs to be converted to numpy array or it gives error
-        jacobian_list = np.asarray(jacobian_list) 
+        jacobian_list = np.asarray(jacobian_info) 
 
         # convert to list of lists to separate different measurements
         jacobian = []
@@ -826,7 +826,7 @@ class MeasurementOptimizer:
 
 
     def build_model_external(self, m, fim_init=None):
-        ex_model = LogDetModel(num_para=self.n_parameters, init_fim=fim_init)
+        ex_model = LogDetModel(n_parameters=self.n_parameters, initial_fim=fim_init)
         m.egb = ExternalGreyBoxBlock()
         m.egb.set_external_model(ex_model)
 
@@ -859,8 +859,8 @@ class MeasurementOptimizer:
 
         return FIM
     
-    def solve(self, mod, mip_option=False, objective="A", degeneracy_hunter=False):
-        if not mip_option and objective=="A":
+    def solve(self, mod, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False):
+        if not mip_option and objective==ObjectiveLib.A:
             solver = pyo.SolverFactory('ipopt')
             solver.options['linear_solver'] = "ma57"
             if degeneracy_hunter:
@@ -870,12 +870,12 @@ class MeasurementOptimizer:
             if degeneracy_hunter:
                 dh = DegeneracyHunter(mod, solver=solver)
 
-        elif mip_option and objective=="A":
+        elif mip_option and objective==ObjectiveLib.A:
             solver = pyo.SolverFactory('gurobi', solver_io="python")
             #solver.options['mipgap'] = 0.1
             solver.solve(mod, tee=True)
             
-        elif objective=="D":  
+        elif objective==ObjectiveLib.D:  
             solver = pyo.SolverFactory('cyipopt')
             solver.config.options['hessian_approximation'] = 'limited-memory' 
             additional_options={'max_iter':3000, 'output_file': 'console_output',
