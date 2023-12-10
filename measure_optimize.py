@@ -8,6 +8,7 @@ import pyomo.environ as pyo
 from greybox_generalize import LogDetModel
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel, ExternalGreyBoxBlock
 from enum import Enum
+from itertools import permutations, product
 #from idaes.core.util.model_diagnostics import DegeneracyHunter
 
 class CovarianceStructure(Enum): 
@@ -807,20 +808,59 @@ class MeasurementOptimizer:
 
         elif obj == ObjectiveLib.D:
 
-            def _model_i(b):
-                self.build_model_external(b, fim_init=fim_initial_dict)
-            m.my_block = pyo.Block(rule=_model_i)
+            if grey_box_option:
 
-            for i in range(self.n_parameters):
-                for j in range(i, self.n_parameters):
-                    def eq_fim(m):
-                        return m.TotalFIM[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
-                    
-                    con_name = "con"+str(i)+str(j)
-                    m.add_component(con_name, pyo.Constraint(expr=eq_fim))
+                def _model_i(b):
+                    self.build_model_external(b, fim_init=fim_initial_dict)
+                m.my_block = pyo.Block(rule=_model_i)
 
-            # add objective
-            m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
+                for i in range(self.n_parameters):
+                    for j in range(i, self.n_parameters):
+                        def eq_fim(m):
+                            return m.TotalFIM[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
+                        
+                        con_name = "con"+str(i)+str(j)
+                        m.add_component(con_name, pyo.Constraint(expr=eq_fim))
+
+                # add objective
+                m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
+
+            else:
+                def det_general(m):
+                    """Calculate determinant. Can be applied to FIM of any size.
+                    det(A) = sum_{\sigma \in \S_n} (sgn(\sigma) * \Prod_{i=1}^n a_{i,\sigma_i})
+                    Use permutation() to get permutations, sgn() to get signature
+                    """
+                    r_list = list(range(len(m.regression_parameters)))
+                    # get all permutations
+                    object_p = permutations(r_list)
+                    list_p = list(object_p)
+
+                    # generate a name_order to iterate \sigma_i
+                    det_perm = 0
+                    for i in range(len(list_p)):
+                        name_order = []
+                        x_order = list_p[i]
+                        # sigma_i is the value in the i-th position after the reordering \sigma
+                        for x in range(len(x_order)):
+                            for y, element in enumerate(m.regression_parameters):
+                                if x_order[x] == y:
+                                    name_order.append(element)
+
+                    # det(A) = sum_{\sigma \in \S_n} (sgn(\sigma) * \Prod_{i=1}^n a_{i,\sigma_i})
+                    det_perm = sum(
+                        self._sgn(list_p[d])
+                        * sum(
+                            m.fim[each, name_order[b]]
+                            for b, each in enumerate(m.regression_parameters)
+                        )
+                        for d in range(len(list_p))
+                    )
+                    return m.det == det_perm
+                
+                # add objective
+                m.det_rule = pyo.Constraint(rule=det_general)
+                m.Obj = pyo.Objective(expr=m.det, sense=pyo.maximize)
 
         return m 
 
@@ -994,6 +1034,37 @@ class MeasurementOptimizer:
 
         return ans_y, sol_y
 
+    def _sgn(self, p):
+        """
+        This is a helper function for stochastic_program function to compute the determinant formula.
+        Give the signature of a permutation
+
+        Parameters
+        -----------
+        p: the permutation (a list)
+
+        Returns
+        -------
+        1 if the number of exchange is an even number
+        -1 if the number is an odd number
+        """
+
+        if len(p) == 1:
+            return 1
+
+        trans = 0
+
+        for i in range(0, len(p)):
+            j = i + 1
+
+            for j in range(j, len(p)):
+                if p[i] > p[j]:
+                    trans = trans + 1
+
+        if (trans % 2) == 0:
+            return 1
+        else:
+            return -1
 
 
                 
