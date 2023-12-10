@@ -8,7 +8,6 @@ import pyomo.environ as pyo
 from greybox_generalize import LogDetModel
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel, ExternalGreyBoxBlock
 from enum import Enum
-from itertools import permutations, product
 #from idaes.core.util.model_diagnostics import DegeneracyHunter
 
 class CovarianceStructure(Enum): 
@@ -487,14 +486,19 @@ class MeasurementOptimizer:
         print('Cond:', max(eig)/min(eig))
 
     def continuous_optimization(self, mixed_integer=False, obj=ObjectiveLib.A, 
+                                mix_obj = False, alpha=1, fixed_nlp=False,
                                 fix=False, upper_diagonal_only=False,
                                 num_dynamic_t_name = None, 
                                 manual_number=20, budget=100, 
                                 init_cov_y=None, initial_fim=None,
                                 dynamic_install_initial = None,
+                                total_measure_initial = 1, 
                                 static_dynamic_pair=None,
                                 time_interval_all_dynamic=False, 
-                                total_manual_num_init=10):
+                                total_manual_num_init=10, 
+                                cost_initial = 100, 
+                               FIM_diagonal_small_element=0, 
+                               print_level = 0):
         
         """Continuous optimization problem formulation. 
 
@@ -504,6 +508,12 @@ class MeasurementOptimizer:
             not relaxing integer decisions
         :param obj: Enum
             "A" or "D" optimality, use trace or determinant of FIM 
+        :param mix_obj: boolean 
+            if True, the objective function is a weighted sum of A- and D-optimality (trace and determinant)
+        :param alpha: float
+            range [0,1], weight of mix_obj. if 1, it is A-optimality. if 0, it is D-optimality 
+        :param fixed_nlp: boolean 
+            if True, the problem is formulated as a fixed NLP 
         :param fix: boolean
             if solving as a square problem or with DOFs 
         :param upper_diagonal_only: boolean
@@ -520,21 +530,41 @@ class MeasurementOptimizer:
             initialize FIM
         :param dynamic_install_initial: list
             initialize if_dynamic_install
+        :param total_measure_initial: integer
+            initialize the total number of measurements chosen
         :param static_dynamic_pair: list of lists
             a list of the name of measurements, that are selected as either dynamic or static measurements.
         :param time_interval_all_dynamic: boolean
             if True, the minimal time interval applies for all dynamical measurements 
         :param total_manual_num_init: integer
             initialize the total number of dynamical timepoints selected 
+        :param cost initial: float
+            initialize the cost 
+        :param FIM_diagonal_small_element: float
+            a small number, default to be 0, to be added to FIM diagonal elements for better convergence
+        :param print_level: integer
+            0 (default): no process information 
+            1: minimal info
+            2: intermediate 
+            3: everything
         """
 
         m = pyo.ConcreteModel()
 
         # measurements set
         m.n_responses = pyo.Set(initialize=range(self.num_measure_dynamic_flatten))
+        m.num_measure_dynamic_flatten = self.num_measure_dynamic_flatten
+        m.n_static_measurements = self.n_static_measurements
+        m.num_measure_dynamic_flatten = self.num_measure_dynamic_flatten
+        m.cost_list = self.cost_list
+        m.dynamic_install_cost = self.dynamic_install_cost
         # FIM set 
         m.DimFIM = pyo.Set(initialize=range(self.n_parameters))
 
+        self.print_level = print_level
+        
+        self.fixed_nlp= fixed_nlp
+        self.initial_fim = initial_fim
         # dynamic measurements parameters 
         # dynamic measurement number of timepoints 
         self.dynamic_Nt = self.Nt[self.n_static_measurements]
@@ -551,11 +581,15 @@ class MeasurementOptimizer:
 
         # initialize with identity
         def identity(m,a,b):
-            return 1 if a==b else 0 
+            return 1 if a==b else 0
         def initialize_point(m,a,b):
-            return init_cov_y[a][b]
+            if init_cov_y[a][b] > 0:
+                return init_cov_y[a][b]
+            else:
+                return 0
+            #return init_cov_y[a][b] if init_cov_y[a][b]>0 else 0
         
-        if init_cov_y.any():
+        if init_cov_y is not None:
             initialize=initialize_point
         else:
             initialize=identity
@@ -573,17 +607,18 @@ class MeasurementOptimizer:
         # decision variables
         if mixed_integer:
             if upper_diagonal_only:
-                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(0,1), within=pyo.Binary)
+                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, within=pyo.Binary)
             else:
-                m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, bounds=(0,1), within=pyo.Binary)
+                m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, within=pyo.Binary)
         else:
             if upper_diagonal_only:
-                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(1E-6,1), within=pyo.Reals)
+                #m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(0,1), within=pyo.Reals)
+                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(-0.1,1), within=pyo.Reals)
             else:
                 m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
         
         # use a fix option to compute results for square problems with given y 
-        if fix:
+        if fix or fixed_nlp:
             m.cov_y.fix()
 
         def init_fim(m,p,q):
@@ -618,10 +653,19 @@ class MeasurementOptimizer:
                             summi += m.cov_y[i,j]*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
                         else:
                             summi += m.cov_y[j,i]*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
-                return m.TotalFIM[a,b] == summi
+                            
+                if a==b:
+                    return m.TotalFIM[a,b] == summi + FIM_diagonal_small_element
+                else:
+                    return m.TotalFIM[a,b] == summi
             else:
                 return m.TotalFIM[a,b] == m.TotalFIM[b,a]
             
+        def integer_cut_0(m):
+            return m.total_number_measurements == sum(m.cov_y[i,i] for i in range(self.num_measure_dynamic_flatten))
+        
+        def integer_cut_0_ineq(m):
+            return m.total_number_measurements >=1 
     
         def total_dynamic(m):
             return m.total_number_dynamic_measurements==sum(m.cov_y[i,i] for i in range(self.n_static_measurements, self.num_measure_dynamic_flatten))
@@ -702,6 +746,11 @@ class MeasurementOptimizer:
             # total dynamic timepoints number
             m.total_number_dynamic_measurements = pyo.Var(initialize=total_manual_num_init)
             m.manual = pyo.Constraint(rule=total_dynamic)
+
+            ## integer cuts 
+            m.total_number_measurements = pyo.Var(initialize=total_measure_initial)
+            m.integer_cut0 = pyo.Constraint(rule=integer_cut_0)
+            m.integer_cut0_in = pyo.Constraint(rule=integer_cut_0_ineq)
             
             # this is used for better performances for MIP
             if mixed_integer and not upper_diagonal_only:
@@ -718,14 +767,17 @@ class MeasurementOptimizer:
                 if dynamic_install_initial is None:
                     return 0
                 else:
-                    print(j)
-                    print(dynamic_install_initial)
                     return dynamic_install_initial[j-self.n_static_measurements]
 
             if mixed_integer:
                 m.if_install_dynamic = pyo.Var(m.DimDynamic, initialize=dynamic_install_init, bounds=(0,1), within=pyo.Binary)
+    
             else:
                 m.if_install_dynamic = pyo.Var(m.DimDynamic, initialize=dynamic_install_init, bounds=(0,1))
+                
+            if self.fixed_nlp:
+                m.if_install_dynamic.fix()
+                    
             m.dynamic_cost = pyo.Constraint(m.DimDynamic, m.DimDynamic_t, rule=dynamic_fix_yd)
             m.dynamic_con2 = pyo.Constraint(m.DimDynamic, rule=dynamic_fix_yd_con2)
 
@@ -777,7 +829,7 @@ class MeasurementOptimizer:
                         m.add_component(con_name, pyo.Constraint(expr=discretizer))
                 # if this constraint applies to each dynamic measurements, in a local way
                 else:
-                    for i in m.DimDynamic:
+                    for i in m.DimDynamicf:
                         for t in range(self.dynamic_Nt):
                             # end time is an open end of the region, so another constraint needs to be added to include end_time
                             #if dynamic_time[t]+discretize_time <= end_time+0.1*discretize_time:       
@@ -798,7 +850,7 @@ class MeasurementOptimizer:
                             m.add_component(con_name, pyo.Constraint(expr=discretizer))
                         
             
-            m.cost = pyo.Var(initialize=budget)
+            m.cost = pyo.Var(initialize=cost_initial)
             m.cost_compute = pyo.Constraint(rule=cost_compute)
             m.budget_limit = pyo.Constraint(rule=cost_limit)
 
@@ -808,65 +860,44 @@ class MeasurementOptimizer:
 
         elif obj == ObjectiveLib.D:
 
-            if grey_box_option:
+            def _model_i(b):
+                self.build_model_external(b, fim_init=fim_initial_dict)
+            m.my_block = pyo.Block(rule=_model_i)
 
-                def _model_i(b):
-                    self.build_model_external(b, fim_init=fim_initial_dict)
-                m.my_block = pyo.Block(rule=_model_i)
+            if self.print_level >= 2: 
+                print("Pyomo creates grey-box with initial FIM:", fim_initial_dict)
 
-                for i in range(self.n_parameters):
-                    for j in range(i, self.n_parameters):
-                        def eq_fim(m):
-                            return m.TotalFIM[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
-                        
-                        con_name = "con"+str(i)+str(j)
-                        m.add_component(con_name, pyo.Constraint(expr=eq_fim))
+            for i in range(self.n_parameters):
+                for j in range(i, self.n_parameters):
+                    def eq_fim(m):
+                        return m.TotalFIM[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
+                    
+                    con_name = "con"+str(i)+str(j)
+                    m.add_component(con_name, pyo.Constraint(expr=eq_fim))
+            
+            _, m.my_block.egb.outputs['log_det'] = np.linalg.slogdet(np.asarray(initial_fim))
 
-                # add objective
-                m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
-
-            else:
-                def det_general(m):
-                    """Calculate determinant. Can be applied to FIM of any size.
-                    det(A) = sum_{\sigma \in \S_n} (sgn(\sigma) * \Prod_{i=1}^n a_{i,\sigma_i})
-                    Use permutation() to get permutations, sgn() to get signature
-                    """
-                    r_list = list(range(len(m.regression_parameters)))
-                    # get all permutations
-                    object_p = permutations(r_list)
-                    list_p = list(object_p)
-
-                    # generate a name_order to iterate \sigma_i
-                    det_perm = 0
-                    for i in range(len(list_p)):
-                        name_order = []
-                        x_order = list_p[i]
-                        # sigma_i is the value in the i-th position after the reordering \sigma
-                        for x in range(len(x_order)):
-                            for y, element in enumerate(m.regression_parameters):
-                                if x_order[x] == y:
-                                    name_order.append(element)
-
-                    # det(A) = sum_{\sigma \in \S_n} (sgn(\sigma) * \Prod_{i=1}^n a_{i,\sigma_i})
-                    det_perm = sum(
-                        self._sgn(list_p[d])
-                        * sum(
-                            m.fim[each, name_order[b]]
-                            for b, each in enumerate(m.regression_parameters)
-                        )
-                        for d in range(len(list_p))
-                    )
-                    return m.det == det_perm
+            if self.print_level >= 2: 
+                print("Pyomo initializes grey-box output log_det as:",  np.linalg.slogdet(np.asarray(initial_fim))[1])
+            
+            # add objective
+            if mix_obj: 
                 
-                # add objective
-                m.det_rule = pyo.Constraint(rule=det_general)
-                m.Obj = pyo.Objective(expr=m.det, sense=pyo.maximize)
+                m.trace = pyo.Expression(rule=compute_trace(m))
+                
+                m.logdet = pyo.Expression(rule=m.my_block.egb.outputs['log_det'])
+                
+                m.Obj = pyo.Objective(expr=m.logdet+alpha*m.trace, sense=pyo.maximize)
+                
+            else:
+            
+                m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
 
         return m 
 
 
     def build_model_external(self, m, fim_init=None):
-        ex_model = LogDetModel(n_parameters=self.n_parameters, initial_fim=fim_init)
+        ex_model = LogDetModel(n_parameters=self.n_parameters, initial_fim=fim_init, print_level=self.print_level)
         m.egb = ExternalGreyBoxBlock()
         m.egb.set_external_model(ex_model)
 
@@ -900,30 +931,97 @@ class MeasurementOptimizer:
         return FIM
     
     def solve(self, mod, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False):
-        if not mip_option and objective==ObjectiveLib.A:
-            solver = pyo.SolverFactory('ipopt')
-            solver.options['linear_solver'] = "ma57"
+        if self.fixed_nlp:
+            
+            solver = pyo.SolverFactory('cyipopt')
+            solver.config.options['hessian_approximation'] = 'limited-memory' 
+            additional_options={'max_iter':3000, 'output_file': 'console_output',
+                                    'linear_solver':'mumps', 
+                                    #"halt_on_ampl_error": "yes", 
+                                    "bound_push": 1E-10}
+            
             if degeneracy_hunter:
-                solver.options['max_iter'] = 0
-                solver.options['bound_push'] = 1E-6
+                additional_options={'max_iter':0, 'output_file': 'console_output',
+                                 'linear_solver':'mumps',  'bound_push':1E-10}
+
+            for k,v in additional_options.items():
+                solver.config.options[k] = v
             solver.solve(mod, tee=True)
+            
             if degeneracy_hunter:
                 dh = DegeneracyHunter(mod, solver=solver)
+        
+        elif not mip_option and objective==ObjectiveLib.A:
+            #solver = pyo.SolverFactory('ipopt')
+            #solver.options['linear_solver'] = "ma57"
+            #solver.solve(mod, tee=True)
+                
+            solver = pyo.SolverFactory('gurobi', solver_io="python")
+            solver.options['mipgap'] = 0.1
+            solver.solve(mod, tee=True)
 
         elif mip_option and objective==ObjectiveLib.A:
             solver = pyo.SolverFactory('gurobi', solver_io="python")
             #solver.options['mipgap'] = 0.1
             solver.solve(mod, tee=True)
             
-        elif objective==ObjectiveLib.D:  
+        elif not mip_option and objective==ObjectiveLib.D:  
             solver = pyo.SolverFactory('cyipopt')
             solver.config.options['hessian_approximation'] = 'limited-memory' 
             additional_options={'max_iter':3000, 'output_file': 'console_output',
                                 'linear_solver':'mumps'}
             
+            if degeneracy_hunter:
+                additional_options={'max_iter':0, 'output_file': 'console_output',
+                                 'linear_solver':'mumps',  'bound_push':1E-6}
+
             for k,v in additional_options.items():
                 solver.config.options[k] = v
             solver.solve(mod, tee=True)
+            
+            if degeneracy_hunter:
+                dh = DegeneracyHunter(mod, solver=solver)
+
+        elif mip_option and objective==ObjectiveLib.D:
+            
+            solver = pyo.SolverFactory("mindtpy")
+
+            results = solver.solve(
+                mod, 
+                strategy="OA",  
+                init_strategy = "rNLP", 
+                #init_strategy='initial_binary',
+                mip_solver = "gurobi", 
+                nlp_solver = "cyipopt", 
+                calculate_dual_at_solution=True,
+                tee=True,
+                #add_no_good_cuts=True,
+                stalling_limit=1000,
+                iteration_limit=150,
+                mip_solver_tee = True, 
+                mip_solver_args= {
+                    "options": {
+                        "NumericFocus": '3'
+                    }
+                },
+                nlp_solver_tee = True,
+                nlp_solver_args = {
+                    "options": {
+                        "hessian_approximation": "limited-memory", 
+                        'output_file': 'console_output',
+                        "linear_solver": "mumps",
+                        "max_iter": 3000,   
+                        #"halt_on_ampl_error": "yes", 
+                        "bound_push": 1E-10,
+                        "warm_start_init_point": "yes",
+                        "warm_start_bound_push": 1E-10,
+                        "warm_start_bound_frac": 1E-10, 
+                        "warm_start_slack_bound_frac": 1E-10, 
+                        "warm_start_slack_bound_push": 1E-10, 
+                        "warm_start_mult_bound_push": 1E-10,
+                    }
+                },
+            )
             
         if degeneracy_hunter:
             return mod, dh
@@ -1034,37 +1132,6 @@ class MeasurementOptimizer:
 
         return ans_y, sol_y
 
-    def _sgn(self, p):
-        """
-        This is a helper function for stochastic_program function to compute the determinant formula.
-        Give the signature of a permutation
-
-        Parameters
-        -----------
-        p: the permutation (a list)
-
-        Returns
-        -------
-        1 if the number of exchange is an even number
-        -1 if the number is an odd number
-        """
-
-        if len(p) == 1:
-            return 1
-
-        trans = 0
-
-        for i in range(0, len(p)):
-            j = i + 1
-
-            for j in range(j, len(p)):
-                if p[i] > p[j]:
-                    trans = trans + 1
-
-        if (trans % 2) == 0:
-            return 1
-        else:
-            return -1
 
 
                 

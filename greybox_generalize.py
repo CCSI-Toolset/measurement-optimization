@@ -7,7 +7,7 @@ from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxB
 class LogDetModel(ExternalGreyBoxModel):
     """Greybox model to compute the log determinant of a matrix.
     """
-    def __init__(self, n_parameters=2, initial_fim=None, use_exact_derivatives=True,verbose=True):
+    def __init__(self, n_parameters=2, initial_fim=None, use_exact_derivatives=True,print_level=0):
         """
         Parameters
 
@@ -18,16 +18,21 @@ class LogDetModel(ExternalGreyBoxModel):
         use_exact_derivatives: bool 
             If True, the exact derivatives are used. If False, the finite difference
             approximation is used.
-        verbose: bool
-            If True, print information about the model.
+        print_level: integer
+            0 (default): no process information 
+            1: minimal info
+            2: intermediate 
+            3: everything
         """
         self._use_exact_derivatives = use_exact_derivatives
-        self.verbose = verbose
+        self.print_level = print_level 
         self.n_parameters = n_parameters
         self.num_input = int(n_parameters + (n_parameters*n_parameters-n_parameters)//2)
         self.initial_fim = initial_fim
-        print(initial_fim)
-        print("initialize with:", self.initial_fim)
+        
+        if self.print_level > 1:
+            print("\n Create grey-box with\n", initial_fim)
+            #print(self._input_values)
         
         # For use with exact Hessian
         self._output_con_mult_values = np.zeros(1)
@@ -66,6 +71,10 @@ class LogDetModel(ExternalGreyBoxModel):
         # initialize, set up LB and UB
         # only generating upper triangular part
         # loop over parameters
+        if self.initial_fim is not None:
+            if self.print_level > 1: 
+                print("Grey-box initialize inputs with: ", self.initial_fim)
+
         for i in range(self.n_parameters):
             # loop over parameters from current parameter to end
             for j in range(i, self.n_parameters):
@@ -74,16 +83,15 @@ class LogDetModel(ExternalGreyBoxModel):
                 str_name = 'ele_'+str(i)+"_"+str(j)
                 
                 if self.initial_fim is not None:
-                    print("initialized")
                     pyomo_block.inputs[str_name].value = self.initial_fim[str_name]
+                    
                 else:
-                    print("uninitialized")
                     # identity matrix 
                     if i==j:
                         pyomo_block.inputs[str_name].value = 1
                     else:
                         pyomo_block.inputs[str_name].value = 0
-                    
+
                 count += 1 
                 
         self.ele_to_order = ele_to_order
@@ -105,11 +113,13 @@ class LogDetModel(ExternalGreyBoxModel):
         # compute log determinant
         (sign, logdet) = np.linalg.slogdet(M)
 
-        if self.verbose:
+        if self.print_level > 1:
             print("\n Consider M =\n",M)
             print(self._input_values)
             print("   logdet = ",logdet,"\n")
             print("Eigvals:", np.linalg.eigvals(M))
+            print("iteration")
+            print("Solution: ", self._input_values)
 
         return np.asarray([logdet], dtype=np.float64)
 
