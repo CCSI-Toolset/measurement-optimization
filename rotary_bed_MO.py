@@ -26,6 +26,18 @@ all_names_strategy3 = ['Ads.gas_inlet.F', 'Ads.gas_outlet.F', 'Ads.gas_outlet.T'
             'Ads.gas_outlet.z("CO2").dynamic', 'Des.gas_outlet.z("CO2").dynamic', # dynamic z 
             'Ads.z("CO2",19,10)', 'Ads.z("CO2",23,10)', 'Ads.z("CO2",28,10)']
 
+error_variance = [1, 1, 1, 
+                 1, 1, 
+                 1, 1, 
+                 1, 1, 
+                 0.01, 0.01, 
+                 0.01, 0.01,
+                 0.01, 0.01, 0.01]
+
+error_mat = [[0]*len(all_names_strategy3) for _ in range(len(all_names_strategy3))]
+
+for _ in range(len(all_names_strategy3)):
+    error_mat[_][_] = error_variance[_]
 
 static_cost = [1000, #ads.gas_inlet.F (0)
     1000, #ads.gas_outlet.F (1)
@@ -65,7 +77,9 @@ Q = dataObject.get_Q_list([0,1,2,4,5,6,8,9,10,3,7],
                         [3,7,11,12,13], Nt)
 
 
-calculator = MeasurementOptimizer(Q, measure_info, error_opt=CovarianceStructure.identity, verbose=True)
+calculator = MeasurementOptimizer(Q, measure_info, error_cov = error_mat,  
+                                  error_opt=CovarianceStructure.measure_correlation, verbose=True)
+
 
 fim_expect = calculator.fim_computation()
 
@@ -76,7 +90,7 @@ num_total = num_static + num_dynamic*Nt
 
 
 # initialize first iteration 
-budget_opt = 19000
+budget_opt = 15000
 
 # choose what solutions to initialize with 
 initial_option = "minlp_D"
