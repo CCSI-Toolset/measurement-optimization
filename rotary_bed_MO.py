@@ -6,18 +6,20 @@ import pickle
 import time
 
 
-### Set up problem 
+# set up problem formulation 
+
+# number of time points for DCM
 Nt =110
-
+# maximum manual measurement number
 max_manual_num = 5 
+# minimal measurement interval 
 min_interval_num = 10
-
+# index of columns of SCM and DCM in Q
 static_ind = [0,1,2,3,4,5,6,7,8,9,10]
 dynamic_ind = [11,12,13,14,15]
 all_ind = static_ind+dynamic_ind
-
 num_total = len(all_ind)
-
+# meausrement names 
 all_names_strategy3 = ['Ads.gas_inlet.F', 'Ads.gas_outlet.F', 'Ads.gas_outlet.T', 
              'Des.gas_inlet.F', 'Des.gas_outlet.F', 
              'Des.gas_outlet.T',  'Ads.T_g.Value(19,10)', 
@@ -25,7 +27,7 @@ all_names_strategy3 = ['Ads.gas_inlet.F', 'Ads.gas_outlet.F', 'Ads.gas_outlet.T'
             'Ads.gas_outlet.z("CO2").static', 'Des.gas_outlet.z("CO2").static', # static z 
             'Ads.gas_outlet.z("CO2").dynamic', 'Des.gas_outlet.z("CO2").dynamic', # dynamic z 
             'Ads.z("CO2",19,10)', 'Ads.z("CO2",23,10)', 'Ads.z("CO2",28,10)']
-
+# define error variance 
 error_variance = [1, 1, 1, 
                  1, 1, 
                  1, 1, 
@@ -33,12 +35,12 @@ error_variance = [1, 1, 1,
                  0.01, 0.01, 
                  0.01, 0.01,
                  0.01, 0.01, 0.01]
-
+# define error matrix
 error_mat = [[0]*len(all_names_strategy3) for _ in range(len(all_names_strategy3))]
 
 for _ in range(len(all_names_strategy3)):
     error_mat[_][_] = error_variance[_]
-
+# define static cost
 static_cost = [1000, #ads.gas_inlet.F (0)
     1000, #ads.gas_outlet.F (1)
      500, #ads.gas_outlet.T (2)
@@ -51,13 +53,14 @@ static_cost = [1000, #ads.gas_inlet.F (0)
     7000,
     7000] 
 
-
 static_cost.extend([100, 100, 500, 500, 500])
-
+# define dynamic cost
 dynamic_cost = [0]*len(static_ind)
 dynamic_cost.extend([100]*len(dynamic_ind))
 
+# define manual number maximum 
 max_manual = [max_manual_num]*num_total
+# define minimal interval time 
 min_time_interval = [min_interval_num]*num_total
 
 measure_info = pd.DataFrame({
@@ -76,14 +79,16 @@ dataObject.read_jacobian('./RotaryBed/Q'+str(Nt)+'_scale.csv')
 Q = dataObject.get_Q_list([0,1,2,4,5,6,8,9,10,3,7],
                         [3,7,11,12,13], Nt)
 
-
+# define with the error structure
 calculator = MeasurementOptimizer(Q, measure_info, error_cov = error_mat,  
                                   error_opt=CovarianceStructure.measure_correlation, verbose=True)
 
-
+# calculate unit FIMs
 fim_expect = calculator.fim_computation()
 
 
+## MO optimization 
+# extract number of SCM, DCM, and total number of measurements
 num_static = len(static_ind)
 num_dynamic  = len(dynamic_ind)
 num_total = num_static + num_dynamic*Nt
@@ -110,7 +115,7 @@ elif initial_option == "minlp_D":
 
 
 curr_results = set([int(curr_results[i]) for i in range(len(curr_results))])
-
+## find if there has been a original solution for the current budget
 if budget_opt in curr_results: # use an existed initial solutioon
     curr_budget = budget_opt
 
@@ -135,25 +140,24 @@ with open(y_init_file, 'rb') as f:
 
 # round to 0.25 back to 0, so that they are integer-feasible 
 
-for i in range(561):
-    for j in range(561):
+for i in range(num_total):
+    for j in range(num_total):
         if init_cov_y[i][j] > 0.99:
             init_cov_y[i][j] = int(1)
         else:
             init_cov_y[i][j] = int(0)
             
-#print(init_cov_y)
 total_manual_init = 0 
 dynamic_install_init = [0,0,0,0,0]
 
-for i in range(11,561):
+for i in range(num_static,num_total):
     if init_cov_y[i][i] > 0.01:
         total_manual_init += 1 
         
-        i_pos = int((i-11)/110)
+        i_pos = int((i-num_static)/Nt)
         dynamic_install_init[i_pos] = 1
         
-total_measure_init = sum(init_cov_y[i][i] for i in range(561))
+total_measure_init = sum(init_cov_y[i][i] for i in range(num_total))
 
 cost_init = budget_opt
 
@@ -192,7 +196,6 @@ mod = calculator.continuous_optimization(mixed_integer=mip_option,
                     fix=fix_opt, 
                     upper_diagonal_only=sparse_opt, 
                     num_dynamic_t_name = num_dynamic_time, 
-                    #manual_number = manual_num, 
                     budget=budget_opt,
                     init_cov_y= init_cov_y,
                     initial_fim = fim_prior,
