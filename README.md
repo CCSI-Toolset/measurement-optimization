@@ -3,12 +3,12 @@
 
 ## Content
 
-Measurement optimization framework: measure_optimize.py 
+- measure_optimize.py: Measurement optimization optimization framework
 
-Grey-box generalization: greybox_generalize.py 
+- greybox_generalize.py: Grey-box generalization 
 
-Kinetics case study: kinetics_MO.py
+- kinetics_MO.py: Kinetics case study
 
-Rotary bed case study: rotary_bed_MO.py
+- rotary_bed_MO.py: Rotary bed case study
 
-Figure draw: Draw_figure.ipynb
+- Draw_figure.ipynb: Figure draw 
