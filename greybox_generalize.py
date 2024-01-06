@@ -34,7 +34,7 @@ class LogDetModel(ExternalGreyBoxModel):
             print("\n Create grey-box with\n", initial_fim)
             #print(self._input_values)
         
-        # For use with exact Hessian
+        # variable to store the output value 
         self._output_con_mult_values = np.zeros(1)
 
         if not use_exact_derivatives:
