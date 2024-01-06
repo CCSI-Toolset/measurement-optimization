@@ -45,7 +45,7 @@ class LogDetModel(ExternalGreyBoxModel):
         input_name_list = []
         for i in range(self.n_parameters):
             for j in range(i,self.n_parameters):
-                input_name_list.append("ele_"+str(i)+"_"+str(j))
+                input_name_list.append((i,j))
                 
         return input_name_list
 
@@ -80,7 +80,7 @@ class LogDetModel(ExternalGreyBoxModel):
             for j in range(i, self.n_parameters):
                 # flatten (i,j)
                 ele_to_order[(i,j)], ele_to_order[(j,i)] = count, count 
-                str_name = 'ele_'+str(i)+"_"+str(j)
+                str_name = (i,j)
                 
                 if self.initial_fim is not None:
                     pyomo_block.inputs[str_name].value = self.initial_fim[str_name]
