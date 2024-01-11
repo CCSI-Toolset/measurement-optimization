@@ -56,10 +56,16 @@ class DataProcess:
     def read_jacobian(self, filename):
         """Read jacobian from csv file 
 
+        Argumentts
+        ----------
         This csv file should have the following format:
         columns: parameters to be estimated
         rows: timepoints
         data: jacobian values
+
+        Return
+        ------
+        None
         """
         jacobian_info = pd.read_csv(filename, index_col=False)
         # it needs to be converted to numpy array or it gives error
@@ -69,7 +75,7 @@ class DataProcess:
         jacobian = []
         # first columns are parameter names in string, so to be removed
         for i in range(len(jacobian_list)):
-            # jacobian remove fisrt column which is column names
+            # jacobian remove first column which is column names
             jacobian.append(list(jacobian_list[i][1:]))
 
         self.jacobian = jacobian
