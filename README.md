@@ -28,6 +28,18 @@
 
 - Operating cost results: `kinetics_results/Dec12_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
 
+#### Computational details 
+
+
+- A-optimality LP solver time: "kinetics_time_lp"
+
+- A-optimality MILP solver time: "kinetics_time_milp"
+
+- D-optimality NLP iterations and solver time: "kinetics_time_iter_nlp"
+
+- D-optimality MINLP iterations and solver time: "kinetics_time_iter_minlp"
+
+
 ### Rotary bed case study 
 
 #### FIM of optimal solutions
@@ -49,6 +61,16 @@
 - D-optimality NLP results: `rotary_results/May10_x_d`, x in the range [1000, 2000, 3000, ..., 25000]
 
 - D-optimality MINLP results: `rotary_results/Dec7_x_d_mip`, x in the range [1000, 2000, 3000, ..., 25000]
+
+#### Computational details 
+
+- A-optimality LP solver time: "rotary_time_lp"
+
+- A-optimality MILP solver time: "rotary_time_milp"
+
+- D-optimality NLP iterations and solver time: "rotary_time_iter_nlp"
+
+- D-optimality MINLP iterations and solver time: "rotary_time_iter_minlp"
 
 ## Code 
 
