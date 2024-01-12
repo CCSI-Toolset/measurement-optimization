@@ -64,26 +64,68 @@
 
 #### Computational details 
 
-- A-optimality LP solver time: "rotary_time_lp"
+- A-optimality LP solver time: `rotary_time_lp`
 
-- A-optimality MILP solver time: "rotary_time_milp"
+- A-optimality MILP solver time: `rotary_time_milp`
 
-- D-optimality NLP iterations and solver time: "rotary_time_iter_nlp"
+- D-optimality NLP iterations and solver time: `rotary_time_iter_nlp`
 
-- D-optimality MINLP iterations and solver time: "rotary_time_iter_minlp"
+- D-optimality MINLP iterations and solver time: `rotary_time_iter_minlp`
 
 ## Code 
 
-- measure_optimize.py: Measurement optimization optimization framework
+- `measure_optimize.py`: Measurement optimization optimization framework
 
-- greybox_generalize.py: Grey-box generalization 
+- `greybox_generalize.py`: Grey-box generalization 
 
-- kinetics_MO.py: Kinetics case study
+- `kinetics_MO.py`: Kinetics case study
 
-- rotary_bed_MO.py: Rotary bed case study
+- `rotary_bed_MO.py`: Rotary bed case study
 
-- Draw_figure.ipynb: Figure draw 
+- `Draw_figure.ipynb`: Figure draw 
+
+## Required dependencies 
+
+How to create an environment to run code: 
+
+1. create new environment with `Conda` with `python` version 3.8
+
+  `conda create --name <env_name> python=3.8`
+   
+2. install `IDAES-PSE`
+
+  `pip install idaes-pse` 
+  `idaes get-extensions`
+   
+3. install `Pyomo` from specified branches
+
+  branch for kinetic case study: 
+
+  `pip install git+https://github.com/jialuw96/pyomo.git@MindtpyReactor`
+
+  branch for rotary bed case study: 
+  
+  `pip install git+https://github.com/jialuw96/pyomo.git@MindtpyRotary`
+   
+4. install `GurobiPy`. This is needed only for solving mixed-integer problems
+
+  `conda install -c gurobi gurobi`
+   
+5. install `CyIpopt`. This is needed only for D-optimality problems with grey-box modules
+
+   `conda install -c conda-forge cyipopt`
+
+Software versions we use for the results: 
+
+`Python`: 3.8
+
+`IDAES-PSE`: 2.2.0
+
+`Pyomo`: 6.7.0 dev 0
+
+`GurobiPy`: 10.0.3
+
+`CyIpopt`: 1.3.0
 
 ## Code running guidance 
 
-## 
