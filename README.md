@@ -127,5 +127,10 @@ Software versions we use for the results:
 
 `CyIpopt`: 1.3.0
 
-## Code running guidance 
+## Example to run code for case studies 
 
+run `kinetics_MO.py`
+- change budgets at line 
+
+run `rotary_bed_MO.py`
+- change budgets at line 
