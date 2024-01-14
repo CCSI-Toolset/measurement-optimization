@@ -563,18 +563,22 @@ class MeasurementOptimizer:
     def fim_computation(self):
         """
         compute a list of FIM. 
+        unit FIMs include DCM-DCM FIM, DCM-SCM FIM, SCM-SCM FIM
         """
 
         self.fim_collection = []
 
+        # loop over measurement index
         for i in range(self.num_measure_dynamic_flatten):
+            # loop over measurement index 
             for j in range(self.num_measure_dynamic_flatten):
 
-                # static*static
+                # static*static 
                 if i in self.static_idx_dynamic_flatten and j in self.static_idx_dynamic_flatten:
                     #print("static * static, cov:", self.Sigma_inv[(i,j)])
                     unit = np.asarray(self.Q_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.Q_dynamic_flatten[j])
                     
+                # consider both i=SCM, j=DCM scenario and i=DCM, j=SCM scenario
                 # static*dynamic
                 elif i in self.static_idx_dynamic_flatten and j in self.dynamic_idx_dynamic_flatten:
                     #print("static*dynamic, cov:", self.Sigma_inv[(i,j)])
@@ -590,24 +594,30 @@ class MeasurementOptimizer:
                     #print("dynamic*dynamic, cov:", self.Sigma_inv[(i,j)])
                     unit = self.Sigma_inv[(i,j)]*np.asarray(self.Q_dynamic_flatten[i]).reshape(1, self.n_parameters).T@np.asarray(self.Q_dynamic_flatten[j]).reshape(1,self.n_parameters)
 
+                # store unit FIM following this order
                 self.fim_collection.append(unit.tolist())
 
     def __measure_matrix(self, measurement_vector):
         """
+        This is a helper function, when giving a vector of solutions, it converts this vector into a 2D array
+        This is needed for proofing the solutions after the optimization, 
+        since we only computes the half diagonal of the measurement matrice and flatten it. 
+
         Arguments
         ---------
         :param measurement_vector: a vector of measurement weights solution
-        :return: a full measurement matrix, construct the weights for covariances
         
         Returns
         -------
-        None
+        measurement_matrix: a full measurement matrix, construct the weights for covariances
         """
         # check if measurement vector legal
         assert len(measurement_vector)==self.total_no_measure, "Measurement vector is of wrong shape!!!"
 
+        # initialize measurement matrix as a 2D array
         measurement_matrix = np.zeros((self.total_no_measure, self.total_no_measure))
 
+        # loop over total measurement index 
         for i in range(self.total_no_measure):
             for j in range(self.total_no_measure):
                 measurement_matrix[i,j] = min(measurement_vector[i], measurement_vector[j])
@@ -616,19 +626,19 @@ class MeasurementOptimizer:
 
     def __print_FIM(self, FIM):
         """
-        Analyze one given FIM
+        Analyze one given FIM, this is a helper function after the optimization. 
 
         Arguments
         ---------
         :param FIM: FIM matrix
-        :return: print result analysis
 
         Returns
         -------
+        None
         """
 
-        det = np.linalg.det(FIM)
-        trace = np.trace(FIM)
+        det = np.linalg.det(FIM) # D-optimality
+        trace = np.trace(FIM) # A-optimality 
         eig = np.linalg.eigvals(FIM)
         print('======FIM result======')
         print('FIM:', FIM)
@@ -730,8 +740,13 @@ class MeasurementOptimizer:
         # turn dynamic measurement number of timepoints into a pyomo set 
         m.DimDynamic_t = pyo.Set(initialize=range(self.dynamic_Nt)) 
         
+        # pair time index and real time 
+        # for e.g., time 2h is the index 16, dynamic[16] = 2
+        # this is for the time interval between two DCMs computation
         dynamic_time = {}
+        # loop over time index 
         for i in range(self.dynamic_Nt):
+            # index: real time
             dynamic_time[i] = num_dynamic_t_name[i]
         self.dynamic_time = dynamic_time
 
@@ -742,8 +757,8 @@ class MeasurementOptimizer:
             if init_cov_y[a][b] > 0:
                 return init_cov_y[a][b]
             else:
+                # this is to avoid that some times the given solution contains a really small negative number
                 return 0
-            #return init_cov_y[a][b] if init_cov_y[a][b]>0 else 0
         
         if init_cov_y is not None:
             initialize=initialize_point
@@ -754,22 +769,29 @@ class MeasurementOptimizer:
         def n_responses_half_init(m):
             return ((a,b) for a in m.n_responses for b in range(a, self.num_measure_dynamic_flatten))
         
+        # only define the upper triangle of FIM 
         def DimFIMhalf_init(m):
             return ((a,b) for a in m.DimFIM for b in range(a, self.n_parameters))
         
+        # set for measurement y matrix
         m.responses_upper_diagonal = pyo.Set(dimen=2, initialize=n_responses_half_init)
+        # set for FIM 
         m.DimFIM_half = pyo.Set(dimen=2, initialize=DimFIMhalf_init)
         
-        # decision variables
+        # if decision variables y are binary
         if mixed_integer:
+            # if only defining upper triangle of the y matrix
             if upper_diagonal_only:
                 m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, within=pyo.Binary)
+            # else, define all elements in the y symmetry matrix
             else:
                 m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, within=pyo.Binary)
+        # if decision variables y are relaxed
         else:
+            # if only defining upper triangle of the y matrix
             if upper_diagonal_only:
-                #m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(0,1), within=pyo.Reals)
-                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(-0.1,1), within=pyo.Reals)
+                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
+            # else, define all elements in the y symmetry matrix
             else:
                 m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
         
