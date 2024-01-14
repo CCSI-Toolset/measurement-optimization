@@ -13,15 +13,15 @@ from enum import Enum
 class CovarianceStructure(Enum): 
     """Covariance definition 
     if identity: error covariance matrix is an identity matrix
-    if variance: a list, each element is the corresponding variance, a.k.a. diagonal elements.
+    if variance: a numpy vector, each element is the corresponding variance, a.k.a. diagonal elements.
         Shape: Sum(Nt) 
-    if time_correlation: a list of lists, each element is the error covariances
+    if time_correlation: a 3D numpy array, each element is the error covariances
         This option assumes covariances not between measurements, but between timepoints for one measurement
         Shape: Nm * (Nt_m * Nt_m)
-    if measure_correlation: a list of list, covariance matrix for a single time steps 
+    if measure_correlation: a 2D numpy array, covariance matrix for a single time steps 
         This option assumes the covariances between measurements at the same timestep in a time-invariant way 
         Shape: Nm * Nm
-    if time_measure_correlation: a list of list, covariance matrix for the flattened measurements 
+    if time_measure_correlation: a 2D numpy array, covariance matrix for the flattened measurements 
         Shape: sum(Nt) * sum(Nt) 
     """
     identity = 0
@@ -56,14 +56,28 @@ class DataProcess:
     def read_jacobian(self, filename):
         """Read jacobian from csv file 
 
-        Argumentts
-        ----------
+        Arguments
+        ---------
+        :param filename: a string of the csv file name
+
         This csv file should have the following format:
-        columns: parameters to be estimated
-        rows: timepoints
+        columns: parameters to be estimated 
+        (An extra first column is added for index)
+        rows: measurement timepoints
         data: jacobian values
 
-        Return
+        The csv file example: 
+
+        Column index  |  Parameter 1 | Parameter 2 |  ...  | Parameter P 
+        measurement 1 |    number    |  number     |  ...  | number   
+        measurement 2 |    number    |  number     |  ...  | number  
+        ...
+        measurement N |    number    |  number     |  ...  | number   
+
+        Number according to measurement i, parameter j is 
+        the gradient of measurement i w.r.t parameter j 
+
+        Returns
         ------
         None
         """
@@ -71,11 +85,13 @@ class DataProcess:
         # it needs to be converted to numpy array or it gives error
         jacobian_list = np.asarray(jacobian_info) 
 
-        # convert to list of lists to separate different measurements
+        # jacobian_list (N*Np matrix) is converted to a list of lists (each list is a [Np*1] vector)
+        # to separate different measurements
+        # because FIM requires different gradient [Np*1] vectors multiply together
         jacobian = []
         # first columns are parameter names in string, so to be removed
         for i in range(len(jacobian_list)):
-            # jacobian remove first column which is column names
+            # jacobian remove first column which is column index. see doc string for example input
             jacobian.append(list(jacobian_list[i][1:]))
 
         self.jacobian = jacobian
@@ -84,16 +100,31 @@ class DataProcess:
         """Combine Q for each measurement to be in one Q.
         Q is a list of lists containing jacobian matrix.
         each list contains an Nt*n_parameters elements, which is the sensitivity matrix Q for measurement m
-        static_measurement_idx: list of the index for static measurements 
-        dynamic_measurement_idx: list of the index for dynamic measurements
-        Nt: number of timepoints is needed to split Q for each measurement 
 
-        Return 
-        Q: jacobian information for main class use
+        Arguments
+        ---------
+        :param static_measurement_idx: list of the index for static measurements 
+        :param dynamic_measurement_idx: list of the index for dynamic measurements
+        :param Nt: number of timepoints is needed to split Q for each measurement 
+
+        Returns
+        ------- 
+        Q: jacobian information for main class use, a 2D numpy array
         """
         # number of timepoints for each measurement 
         self.Nt = Nt
 
+        # get the maximum index from index set 
+        # why not sum up static index number and dynamic index number? because they can overlap 
+        max_measure_idx = max(max(static_measurement_idx), max(dynamic_measurement_idx))
+        # the total rows of Q should be equal or more than the number of maximum index given by the argument 
+        assert(len(Q)>=max_measure_idx*self.Nt), "Inconsistent Jacobian matrix shape. Expecting at least "+str(max_measure_idx*self.Nt)+" rows in Q matrix."
+
+        # initialize Q as a list of lists, after stacking all jacobians, it is converted to numpy array
+        # after spliting the overall Jacobian to separate Jacobians for each measurement by self._split_jacobian
+        # each separate Jacobians becomes a list of lists
+        # here we stack the Q according to the orders the user provides SCM and DCM index
+        # Q: jacobian matrix of shape N_measure * Np
         Q = [] 
         # if there is static-cost measurements
         if static_measurement_idx is not None:
@@ -104,17 +135,25 @@ class DataProcess:
             for j in dynamic_measurement_idx:
                 Q.append(self._split_jacobian(j))
 
-        return Q 
+        return np.asarray(Q) 
 
 
     def _split_jacobian(self, idx):
         """Split jacobian according to measurements
+        It splits the overall stacked Q matrix to 
+        Q for measurement 1, Q for measurement 2, ..., Q for measurement N 
+
+        Arguments
+        ---------
         idx: idx of measurements
 
-        Return: 
-        jacobian_idx: a list of integers. jacobian information for one measurement 
-        they are slicing indices for jacobian matrix
+        Returns
+        -------
+        jacobian_idx: a Nt*Np matrix, Nt is the number of timepoints for the measurement. 
+            jacobian information for one measurement 
+            they are slicing indices for jacobian matrix
         """
+        # get a Nt*Np matrix, Nt is the number of timepoint for the measurement 
         jacobian_idx = self.jacobian[idx*self.Nt:(idx+1)*self.Nt][:]
         return jacobian_idx 
     
@@ -123,31 +162,35 @@ class DataProcess:
 class MeasurementOptimizer:
     def __init__(self, Q, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, verbose=True):
         """
-        Argument
-        --------
-        :param Q: a list of lists 
+        Arguments
+        ---------
+        :param Q: a 2D numpy array
             containing jacobian matrix. 
             It contains m lists, m is the number of meausrements 
             Each list contains an N_t_m*n_parameters elements, which is the sensitivity matrix Q for measurement m 
         :param measure_info: a pandas DataFrame 
             containing measurement information.
             columns: ['name', 'Q_index', 'dynamic_cost', 'static_cost', 'min_time_interval', 'max_manual_number']
-        :param error_cov: a list of lists
+        :param error_cov: a numpy array
             defined error covariance matrix here
             if CovarianceStructure.identity: error covariance matrix is an identity matrix
-            if CovarianceStructure.variance: a list, each element is the corresponding variance, a.k.a. diagonal elements.
+            if CovarianceStructure.variance: a numpy vector, each element is the corresponding variance, a.k.a. diagonal elements.
                 Shape: Sum(Nt) 
-            if CovarianceStructure.time_correlation: a list of lists, each element is the error covariances
+            if CovarianceStructure.time_correlation: a 3D numpy array, each element is the error covariances
                 This option assumes covariances not between measurements, but between timepoints for one measurement
                 Shape: Nm * (Nt_m * Nt_m)
-            if CovarianceStructure.measure_correlation: a list of list, covariance matrix for a single time steps 
+            if CovarianceStructure.measure_correlation: a 2D numpy array, covariance matrix for a single time steps 
                 This option assumes the covariances between measurements at the same timestep in a time-invariant way 
                 Shape: Nm * Nm
-            if CovarianceStructure.time_measure_correlation: a list of list, covariance matrix for the flattened measurements 
+            if CovarianceStructure.time_measure_correlation: a 2D numpy array, covariance matrix for the flattened measurements 
                 Shape: sum(Nt) * sum(Nt) 
         :param: error_opt: CovarianceStructure
             can choose from identity, variance, time_correlation, measure_correlation, time_measure_correlation. See above comments.
         :param verbose: if print debug sentences
+
+        Returns
+        -------
+        None 
         """
         # # of static and dynamic measurements
         static_measurement_idx = measure_info[measure_info['dynamic_cost']==0].index.values.tolist()
@@ -164,7 +207,10 @@ class MeasurementOptimizer:
         self.n_dynamic_measurements = len(dynamic_measurement_idx)
         self.dynamic_measurement_idx = dynamic_measurement_idx
         self.n_total_measurements = len(Q)
-        assert self.n_total_measurements==self.n_dynamic_measurements+self.n_static_measurements
+
+        # the Jacobian matrix should have the same rows as the number of DCMs + number of SCMs
+        assert self.n_total_measurements==self.n_dynamic_measurements+self.n_static_measurements, \
+            "Jacobian matrix does not agree to measurement indices, expecting " + str(len(Q)) + " total measurements in Jacobian." 
 
         # measurements can have different # of timepoints
         # Nt key: measurement index, value: # of timepoints for this measure
@@ -179,10 +225,11 @@ class MeasurementOptimizer:
         self.measure_name = measure_info['name'].tolist() # measurement name list 
         self.cost_list = self.static_cost_measure_info['static_cost'].tolist() # static measurements list
         # add dynamic-cost measurements list 
+        # loop over DCM index list
         for i in dynamic_measurement_idx:
             q_ind = measure_info.iloc[i]['Q_index']
             # loop over dynamic-cost measurements time points
-            for t in range(self.Nt[q_ind]):
+            for _ in range(self.Nt[q_ind]):
                 self.cost_list.append(measure_info.iloc[i]['dynamic_cost'])
 
         # dynamic-cost measurements install cost
@@ -197,10 +244,12 @@ class MeasurementOptimizer:
             # this option can also be None, means there are no time interval limitation
             self.min_time_interval = None
 
-        # each manual number 
+        # each manual number, for one measurement, how many time points can be chosen at most 
         each_manual_number = measure_info['max_manual_number'].tolist()
+        # if there is a value, this is how many time points can be chosen for it. 
         if np.asarray(each_manual_number).any():
             self.each_manual_number = each_manual_number
+        # if this is a null list, there is no limitation for how many time points can be chosen for it. 
         else:
             self.each_manual_number = None 
 
@@ -210,11 +259,17 @@ class MeasurementOptimizer:
         # build and check PSD of Sigma
         # check sigma inputs 
         self._check_sigma(error_cov, error_opt)
+        
+        # build the Sigma and Sigma_inv (error covariance matrix and its inverse matrix)
         Sigma = self._build_sigma(error_cov, error_opt)
+
+        # split Sigma_inv to DCM-DCM error, DCM-SCM error vector, SCM-SCM error matrix 
         self._split_sigma(Sigma)
 
 
     def _check_measure_info(self):
+        """Check if the measure_info dataframe is successfully built with all information
+        """
         if "name" not in self.measure_info:
             raise ValueError("measure_info must have a column named 'name'")
         if "Q_index" not in self.measure_info:
@@ -230,28 +285,66 @@ class MeasurementOptimizer:
         
     def _check_sigma(self, error_cov, error_option):
         """ Check sigma inputs shape and values
+
+        Arguments
+        ---------
+        :param error_cov: if error_cov is None, return an identity matrix 
+        option 1: a numpy vector, each element is the corresponding variance, a.k.a. diagonal elements.
+            Shape: Sum(Nt) 
+        option 2: a 3D numpy array, each element is the error covariances
+            This option assumes covariances not between measurements, but between timepoints for one measurement
+            Shape: Nm * (Nt_m * Nt_m)
+        option 3: a 2D numpy array, covariance matrix for a single time steps 
+            This option assumes the covariances between measurements at the same timestep in a time-invariant way 
+            Shape: Nm * Nm
+        option 4: a 2D numpy array, covariance matrix for the flattened measurements 
+            Shape: sum(Nt) * sum(Nt) 
+        :param: error_opt: CovarianceStructure
+            can choose from identity, variance, time_correlation, measure_correlation, time_measure_correlation. See above comments.
+
+        Returns
+        -------
+        None
         """
         # identity matrix 
         if (error_option==CovarianceStructure.identity) or (error_option==CovarianceStructure.variance):
             if error_cov is not None: 
-                assert(len(error_cov)==self.total_num_time), "error_cov must have the same length as total_num_time"
+                if len(error_cov)!=self.total_num_time:
+                    raise ValueError("error_cov must have the same length as total_num_time. Expect length:" + str(self.total_num_time))
 
         elif error_option == CovarianceStructure.time_correlation: 
-            assert(len(error_cov)==self.n_total_measurements),  "error_cov must have the same length as n_total_measurements"
+            if len(error_cov)!=self.n_total_measurements:
+                raise ValueError("error_cov must have the same length as n_total_measurements. Expect length:"+str(self.n_total_measurements))
+            
             for i in range(self.n_total_measurements):
-                assert(len(error_cov[0])==self.Nt[i]),  "error_cov[i] must have the shape Nt[i]*Nt[i]"
-                assert(len(error_cov[0][0])==self.Nt[i]), "error_cov[i] must have the shape Nt[i]*Nt[i]"
+                if len(error_cov[0])!=self.Nt[i]:
+                    raise ValueError("error_cov[i] must have the shape Nt[i]*Nt[i]. Expect number of rows:"+str(self.Nt[i]))
+                
+                if len(error_cov[0][0])!=self.Nt[i]:
+                    raise ValueError("error_cov[i] must have the shape Nt[i]*Nt[i]. Expect number of columns:"+str(self.Nt[i]))
 
         elif error_option == CovarianceStructure.measure_correlation:
-            assert(len(error_cov)==self.n_total_measurements),  "error_cov must have the same length as n_total_measurements"
-            assert(len(error_cov[0])==self.n_total_measurements),  "error_cov[i] must have the same length as n_total_measurements"
+            if len(error_cov)!=self.n_total_measurements:
+                raise ValueError("error_cov must have the same length as n_total_measurements. Expect number of rows:"+str(self.n_total_measurements))
+            
+            if len(error_cov[0])!=self.n_total_measurements:
+                raise ValueError("error_cov[i] must have the same length as n_total_measurements. Expect number of columns:"+str(self.n_total_measurements))
      
         elif error_option == CovarianceStructure.time_measure_correlation:
-            assert(len(error_cov)==self.total_num_time),  "error_cov must have the shape total_num_time*total_num_time"
-            assert(len(error_cov[0])==self.total_num_time),  "error_cov must have the shape total_num_time*total_num_time"
+            if len(error_cov)!=self.total_num_time:
+                raise ValueError("error_cov must have the shape total_num_time*total_num_time. Expect number of rows:"+str(self.total_num_time))
+            
+            if len(error_cov[0])!=self.total_num_time:
+                raise ValueError("error_cov must have the shape total_num_time*total_num_time. Expect number of columns:"+str(self.total_num_time))
 
     def _dynamic_flatten(self, Q):
         """Update dynamic flattened matrix index. 
+        Arguments 
+        ---------
+        :param Q: jacobian information for main class use, a 2D array of shape [N_total_meausrements * Np]
+
+        Returns
+        -------
         dynamic_flatten matrix: flatten dynamic-cost measurements, not flatten static-costs, [s1, d1|t1, ..., d1|tN, s2]
         Flatten matrix: flatten dynamic-cost and static-cost measuremenets
         """
@@ -325,51 +418,81 @@ class MeasurementOptimizer:
         # dimension after flatten
         self.num_measure_flatten = len(self.static_idx_flatten) + len(self.dynamic_idx_flatten)
 
+    
+
     def _build_sigma(self, error_cov, error_option):
         """Build error covariance matrix 
 
-        if error_cov is None, return an identity matrix 
-        option 1: a list, each element is the corresponding variance, a.k.a. diagonal elements.
+        Arguments
+        ---------
+        :param error_cov: if error_cov is None, return an identity matrix 
+        option 1: a numpy vector, each element is the corresponding variance, a.k.a. diagonal elements.
             Shape: Sum(Nt) 
-        option 2: a list of lists, each element is the error covariances
+        option 2: a 3D numpy array, each element is the error covariances
             This option assumes covariances not between measurements, but between timepoints for one measurement
             Shape: Nm * (Nt_m * Nt_m)
-        option 3: a list of list, covariance matrix for a single time steps 
+        option 3: a 2D numpy array, covariance matrix for a single time steps 
             This option assumes the covariances between measurements at the same timestep in a time-invariant way 
             Shape: Nm * Nm
-        option 4: a list of list, covariance matrix for the flattened measurements 
+        option 4: a 2D numpy array, covariance matrix for the flattened measurements 
+            Shape: sum(Nt) * sum(Nt) 
+        :param: error_opt: CovarianceStructure
+            can choose from identity, variance, time_correlation, measure_correlation, time_measure_correlation. See above comments.
+
+        Returns
+        -------
+        Sigma: a 2D numpy array, covariance matrix for the flattened measurements 
             Shape: sum(Nt) * sum(Nt) 
         """
         
+        # initialize error covariance matrix, shape N_all_t * N_all_t
         Sigma = np.zeros((self.total_num_time, self.total_num_time))
-        # identity matrix 
+
+        # identity matrix or only have variance 
         if (error_option==CovarianceStructure.identity) or (error_option==CovarianceStructure.variance):
+            # if given None, it means it is an identity matrix 
             if not error_cov:
+                # create identity matrix 
                 error_cov = [1]*self.total_num_time
             # loop over diagonal elements and change
             for i in range(self.total_num_time):
+                # Sigma has 0 in all off-diagonal elements, error_cov gives the diagonal elements
                 Sigma[i,i] = error_cov[i]
 
+        # different time correlation matrix for each measurement 
+        # no covariance between measurements
         elif error_option == CovarianceStructure.time_correlation: 
             for i in range(self.n_total_measurements):
                 # give the error covariance to Sigma 
+                # each measurement has a different time-correlation structure 
+                # that is why this is a 3D matrix
                 sigma_i_start = self.head_pos_flatten[i]
                 # loop over all timepoints for measurement i 
+                # for each measurement, the time correlation matrix is Nt*Nt
                 for t1 in range(self.Nt[i]):
                     for t2 in range(self.Nt[i]):
+                        # for the ith measurement, the error matrix is error_cov[i]
                         Sigma[sigma_i_start+t1, sigma_i_start+t2] = error_cov[i][t1][t2]
 
+        # covariance between measurements 
+        # the covariances between measurements at the same timestep in a time-invariant way
         elif error_option == CovarianceStructure.measure_correlation:
-            print("Covariances are between measurements at the same time.")
+            # loop over number of measurements
             for i in range(self.n_total_measurements):
+                # loop over number of measurements
                 for j in range(self.n_total_measurements):
+                    # find the covariance term
                     cov_ij = error_cov[i][j]
+                    # find the starting index for each measurement (each measurement i has Nt[i] entries)
                     head_i = self.head_pos_flatten[i]
+                    # starting index for measurement j
                     head_j = self.head_pos_flatten[j]
                     # i, j may have different timesteps
+                    # we find the corresponding index by locating the starting indices
                     for t in range(min(self.Nt[i], self.Nt[j])):
                         Sigma[t+head_i, t+head_j] = cov_ij 
      
+        # the full covariance matrix is given
         elif error_option == CovarianceStructure.time_measure_correlation:
             Sigma = np.asarray(error_cov)
 
@@ -380,8 +503,20 @@ class MeasurementOptimizer:
 
     def _split_sigma(self, Sigma):
         """Split the error covariance matrix to be used for computation
+        They are split to DCM-DCM (scalar) covariance, DCM-SCM (vector) covariance, SCCM-SCM (matrix) covariance 
+        We inverse the Sigma for the computation of FIM
+
+        Arguments
+        ---------
+        :param Sigma: a 2D numpy array, covariance matrix for the flattened measurements 
+            Shape: sum(Nt) * sum(Nt)  
+
+        Returns
+        -------
+        None
         """
         # Inverse of covariance matrix is used 
+        # pinv is used to avoid ill-conditioning issues
         Sigma_inv = np.linalg.pinv(Sigma)
         self.Sigma_inv_matrix = Sigma_inv
         # Use a dicionary to store the inverse of sigma as either scalar number, vector, or matrix
@@ -459,9 +594,14 @@ class MeasurementOptimizer:
 
     def __measure_matrix(self, measurement_vector):
         """
-
+        Arguments
+        ---------
         :param measurement_vector: a vector of measurement weights solution
         :return: a full measurement matrix, construct the weights for covariances
+        
+        Returns
+        -------
+        None
         """
         # check if measurement vector legal
         assert len(measurement_vector)==self.total_no_measure, "Measurement vector is of wrong shape!!!"
@@ -477,8 +617,14 @@ class MeasurementOptimizer:
     def __print_FIM(self, FIM):
         """
         Analyze one given FIM
+
+        Arguments
+        ---------
         :param FIM: FIM matrix
         :return: print result analysis
+
+        Returns
+        -------
         """
 
         det = np.linalg.det(FIM)
@@ -553,6 +699,10 @@ class MeasurementOptimizer:
             1: minimal info
             2: intermediate 
             3: everything
+
+        Returns
+        -------
+        None
         """
 
         m = pyo.ConcreteModel()
@@ -1036,11 +1186,15 @@ class MeasurementOptimizer:
 
     def continuous_optimization_cvxpy(self, objective='D', budget=100, solver=None):
         """
-
+        
+        Arguments
+        ---------
         :param objective: can choose from 'D', 'A', 'E' for now. if defined others or None, use A-optimality.
         :param cost_budget: give a total limit for costs.
         :param solver: default to be MOSEK. Look for CVXPY document for more solver information.
-        :return:
+        
+        Returns
+        -------
         """
 
         # compute Atomic FIM
