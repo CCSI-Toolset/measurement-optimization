@@ -43,16 +43,44 @@ Software versions we use for the results:
 
 `CyIpopt`: 1.3.0
 
+## Code 
+
+- `measure_optimize.py`: Measurement optimization optimization framework
+
+- `greybox_generalize.py`: Grey-box generalization 
+
+- `kinetics_MO.py`: Kinetics case study
+
+- `rotary_bed_MO.py`: Rotary bed case study
+
+- `Draw_figure.ipynb`: Figure draw 
+
+
 ## Example to run code for case studies 
 
 run `kinetics_MO.py`
 - change budgets at line 
 
 run `rotary_bed_MO.py`
-- change budgets at line 
+- change budgets at line
 
 
-## Data files 
+
+
+## Source files
+
+### Kinetics case study 
+
+- `./kinetics_source_data/reactor_kinetics.py`: kinetics case study model
+- `./kinetics_source_data/Q_drop0.csv`: contain Jacobian
+
+### Rotary bed case study 
+
+- `./rotary_source_data/RotaryBed-DataProcess.ipynb`: process rotary bed measurements data from `Aspen Custom Modeler`, generate Jacobian
+- `./rotary_source_data/Q110_scale.csv`: contain Jacobian for paper results
+
+
+## Result files 
 
 ### Kinetics case study 
 
@@ -124,15 +152,4 @@ run `rotary_bed_MO.py`
 
 - D-optimality MINLP iterations and solver time: `rotary_time_iter_minlp`
 
-## Code 
-
-- `measure_optimize.py`: Measurement optimization optimization framework
-
-- `greybox_generalize.py`: Grey-box generalization 
-
-- `kinetics_MO.py`: Kinetics case study
-
-- `rotary_bed_MO.py`: Rotary bed case study
-
-- `Draw_figure.ipynb`: Figure draw 
 
