@@ -17,8 +17,9 @@ min_interval_num = 10
 # index of columns of SCM and DCM in Q
 static_ind = [0,1,2,3,4,5,6,7,8,9,10]
 dynamic_ind = [11,12,13,14,15]
+# this index is the number of SCM + nubmer of DCM, not number of DCM timepoints
 all_ind = static_ind+dynamic_ind
-num_total = len(all_ind)
+num_total_measure = len(all_ind)
 # meausrement names 
 all_names_strategy3 = ['Ads.gas_inlet.F', 'Ads.gas_outlet.F', 'Ads.gas_outlet.T', 
              'Des.gas_inlet.F', 'Des.gas_outlet.F', 
@@ -38,8 +39,10 @@ error_variance = [1, 1, 1,
 # define error matrix
 error_mat = [[0]*len(all_names_strategy3) for _ in range(len(all_names_strategy3))]
 
+# set up variance in the diagonal elements
 for _ in range(len(all_names_strategy3)):
     error_mat[_][_] = error_variance[_]
+
 # define static cost
 static_cost = [1000, #ads.gas_inlet.F (0)
     1000, #ads.gas_outlet.F (1)
@@ -55,21 +58,21 @@ static_cost = [1000, #ads.gas_inlet.F (0)
 
 static_cost.extend([100, 100, 500, 500, 500])
 # define dynamic cost
-dynamic_cost = [0]*len(static_ind)
-dynamic_cost.extend([100]*len(dynamic_ind))
+dynamic_cost = [0]*len(static_ind) # SCM has no installaion costs
+dynamic_cost.extend([100]*len(dynamic_ind)) # 100 is the cost of each time point
 
 # define manual number maximum 
-max_manual = [max_manual_num]*num_total
+max_manual = [max_manual_num]*num_total_measure
 # define minimal interval time 
-min_time_interval = [min_interval_num]*num_total
+min_time_interval = [min_interval_num]*num_total_measure
 
 measure_info = pd.DataFrame({
-    "name": all_names_strategy3,
-    "Q_index": all_ind,
-        "static_cost": static_cost,
-    "dynamic_cost": dynamic_cost,
-    "min_time_interval": min_time_interval, 
-    "max_manual_number": max_manual
+    "name": all_names_strategy3,  # measurement string names
+    "Q_index": all_ind, # measurement index in Q
+        "static_cost": static_cost,  # static costs
+    "dynamic_cost": dynamic_cost,  # dynamic costs
+    "min_time_interval": min_time_interval, # minimal time interval between two timepoints
+    "max_manual_number": max_manual  # maximum number of timepoints 
 })
 
 
@@ -91,6 +94,7 @@ fim_expect = calculator.fim_computation()
 # extract number of SCM, DCM, and total number of measurements
 num_static = len(static_ind)
 num_dynamic  = len(dynamic_ind)
+# this num_total is the summation of number of SCM choices, and number of timepoints in DCMs
 num_total = num_static + num_dynamic*Nt
 
 
@@ -98,48 +102,59 @@ num_total = num_static + num_dynamic*Nt
 budget_opt = 15000
 
 # choose what solutions to initialize with 
-initial_option = "minlp_D"
-#initial_option = "milp_A"
+#initial_option = "minlp_D" # initialize with minlp_D solutions
+initial_option = "milp_A" # initialize with milp_A solutions
+# initial_option = "lp_A" # iniitalize with lp_A solution 
+# initialize_option = "nlp_D" # initialize with nlp_D solution
 
 
 # ==== initialization strategy ==== 
 if initial_option == "milp_A":
-    curr_results = np.linspace(1000, 26000, 26)
     file_name_pre, file_name_end = './rotary_results/Apr17_A_mip_', ''
     file_name_pre_fim = './rotary_results/Apr17_FIM_A_mip_'
 
 elif initial_option == "minlp_D":
-    curr_results = np.linspace(1000, 26000, 26)
-    file_name_pre, file_name_end = './rotary_results/Oct31_', '_d_mip'
-    file_name_pre_fim =  './rotary_results/Oct31_'
+    file_name_pre, file_name_end = './rotary_results/Dec7_', '_d_mip'
+    file_name_pre_fim =  './rotary_results/Dec7_fim_', 'd_mip'
 
+elif initial_option == "lp_A":
+    file_name_pre, file_name_end = './rotary_results/May12_', '_a'
+    file_name_pre_fim = './rotary_results/May12_fim_', "_a"
 
+elif initial_option == "nlp_D":
+    file_name_pre, file_name_end = './rotary_results/May10_', '_d'
+    file_name_pre_fim =  './rotary_results/May10_fim_', '_d'
+
+# current results is a range containing the budgets at where the problems are solved 
+curr_results = np.linspace(1000, 26000, 26)
 curr_results = set([int(curr_results[i]) for i in range(len(curr_results))])
 ## find if there has been a original solution for the current budget
 if budget_opt in curr_results: # use an existed initial solutioon
     curr_budget = budget_opt
 
 else:
-    # find the closest budget
-    curr_min_diff = float("inf")
-    curr_budget = 25000
+    # if not, find the closest budget, and use this as the initial point
+    curr_min_diff = float("inf") # current minimal budget difference 
+    curr_budget = 25000 # starting point
 
+     # find the existing budget that minimize curr_min_diff
     for i in curr_results:
+        # if we found an existing budget that is closer to the given budget
         if abs(i-budget_opt) < curr_min_diff:
             curr_min_diff = abs(i-budget_opt)
             curr_budget = i
 
     print("using solution at", curr_budget, " too initialize")
 
-
+# assign solution file names, and FIM file names
 y_init_file = file_name_pre+str(curr_budget)+file_name_end
 fim_init_file = file_name_pre_fim+str(curr_budget)+file_name_end
 
+# read y 
 with open(y_init_file, 'rb') as f:
     init_cov_y = pickle.load(f)
 
-# round to 0.25 back to 0, so that they are integer-feasible 
-
+# Round possible float solution to be integer 
 for i in range(num_total):
     for j in range(num_total):
         if init_cov_y[i][j] > 0.99:
@@ -147,25 +162,32 @@ for i in range(num_total):
         else:
             init_cov_y[i][j] = int(0)
             
+# initialize total manual number
 total_manual_init = 0 
+# initialize the DCM installation flags
 dynamic_install_init = [0,0,0,0,0]
 
+# round solutions
+# if floating solutions, if value > 0.01, we count it as an integer decision that is 1 or positive
 for i in range(num_static,num_total):
     if init_cov_y[i][i] > 0.01:
         total_manual_init += 1 
-        
+        # identify which DCM this timepoint belongs to, turn the installation flag to be positive 
         i_pos = int((i-num_static)/Nt)
         dynamic_install_init[i_pos] = 1
         
+# compute total measurements number, this is for integer cut
 total_measure_init = sum(init_cov_y[i][i] for i in range(num_total))
 
+# initialize cost, this cost is calculated by the given initial solution
 cost_init = budget_opt
 
-
+# read FIM, initialize FIM and logdet
 with open(fim_init_file, 'rb') as f:
     fim_prior = pickle.load(f)
     print(fim_prior)
 
+# initialize FIM with a small element 
 for i in range(5):
     fim_prior[i][i] += 0.0001
 
@@ -182,14 +204,15 @@ manual_num = 20
 
 num_dynamic_time = np.linspace(2,220,Nt)
 
-static_dynamic = [[9,11], [10,12]]
+static_dynamic = [[9,11], [10,12]] # These pairs cannot be chosen simultaneously
 time_interval_for_all = True
 
+# map the timepoint index to its real time
 dynamic_time_dict = {}
 for i, tim in enumerate(num_dynamic_time):
     dynamic_time_dict[i] = tim 
 
-
+t1 = time.time()
 mod = calculator.continuous_optimization(mixed_integer=mip_option, 
                       obj=objective, 
                     mix_obj = mix_obj_option, alpha = alpha_opt,fixed_nlp = fixed_nlp_opt,
@@ -209,10 +232,12 @@ mod = calculator.continuous_optimization(mixed_integer=mip_option,
                                         print_level=1)
 
                     
-t1 = time.time()
-mod = calculator.solve(mod, mip_option=mip_option, objective = objective)
 t2 = time.time()
-print("solver time:", t2-t1)
+mod = calculator.solve(mod, mip_option=mip_option, objective = objective)
+t3 = time.time()
+
+print("model and solver wall clock time:", t3-t1)
+print("solver wall clock time:", t3-t2)
 
 fim_result = np.zeros((5,5))
 for i in range(5):
