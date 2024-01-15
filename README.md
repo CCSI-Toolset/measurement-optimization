@@ -59,10 +59,10 @@ Software versions we use for the results:
 ## Example to run code for case studies 
 
 run `kinetics_MO.py`
-- change budgets at line 
+- change budgets with the variable `budget_opt`
 
 run `rotary_bed_MO.py`
-- change budgets at line
+- change budgets with the variable `budget_opt`
 
 
 
