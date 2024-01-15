@@ -98,8 +98,18 @@ class DataProcess:
 
     def get_Q_list(self, static_measurement_idx, dynamic_measurement_idx, Nt):
         """Combine Q for each measurement to be in one Q.
-        Q is a list of lists containing jacobian matrix.
+        Through _split_jacobian we get a list of lists for Q, 
         each list contains an Nt*n_parameters elements, which is the sensitivity matrix Q for measurement m
+
+        We aim to convert this list of lists to Q, a numpy array containing jacobian matrix of the shape N_total_m * Np
+        Q structure: 
+        [ \partial y1(t1)/ \partial p1, ..., \partial y1(t1)/ \partial pN,
+        \partial y1(t2)/ \partial p1, ..., \partial y1(t2)/ \partial pN,
+        ..., 
+        \partial y1(tN)/ \partial p1, ..., \partial y1(tN)/ \partial pN,
+        \partial y2(t1)/ \partial p1, ..., \partial y2(t1)/ \partial pN,
+        ..., 
+        \partial yN(tN)/ \partial p1, ..., \partial yN(tN)/ \partial pN,] 
 
         Arguments
         ---------
@@ -118,7 +128,8 @@ class DataProcess:
         # why not sum up static index number and dynamic index number? because they can overlap 
         max_measure_idx = max(max(static_measurement_idx), max(dynamic_measurement_idx))
         # the total rows of Q should be equal or more than the number of maximum index given by the argument 
-        assert(len(Q)>=max_measure_idx*self.Nt), "Inconsistent Jacobian matrix shape. Expecting at least "+str(max_measure_idx*self.Nt)+" rows in Q matrix."
+        if len(Q)<max_measure_idx*self.Nt:
+            raise ValueError("Inconsistent Jacobian matrix shape. Expecting at least "+str(max_measure_idx*self.Nt)+" rows in Q matrix.")
 
         # initialize Q as a list of lists, after stacking all jacobians, it is converted to numpy array
         # after spliting the overall Jacobian to separate Jacobians for each measurement by self._split_jacobian
@@ -194,25 +205,19 @@ class MeasurementOptimizer:
         -------
         None 
         """
-        # # of static and dynamic measurements
-        static_measurement_idx = measure_info[measure_info['dynamic_cost']==0].index.values.tolist()
-        dynamic_measurement_idx = measure_info[measure_info['dynamic_cost']!=0].index.values.tolist()
-        # store static and dynamic measurements dataframe 
-        self.dynamic_cost_measure_info = measure_info[measure_info['dynamic_cost']!=0]
-        self.static_cost_measure_info = measure_info[measure_info['dynamic_cost']==0]
-
         self.measure_info = measure_info
-        # check measure_info
+        # check measure_info has all columns needed
         self._check_measure_info()  
-        self.n_static_measurements = len(static_measurement_idx)
-        self.static_measurement_idx = static_measurement_idx
-        self.n_dynamic_measurements = len(dynamic_measurement_idx)
-        self.dynamic_measurement_idx = dynamic_measurement_idx
+        # parse measure_info information 
+        self._parse_measure_info()
+        
+        # get total measurement number from the shape of Q
         self.n_total_measurements = len(Q)
 
         # the Jacobian matrix should have the same rows as the number of DCMs + number of SCMs
-        assert self.n_total_measurements==self.n_dynamic_measurements+self.n_static_measurements, \
-            "Jacobian matrix does not agree to measurement indices, expecting " + str(len(Q)) + " total measurements in Jacobian." 
+        if self.n_total_measurements!=self.n_dynamic_measurements+self.n_static_measurements:
+            raise ValueError("Jacobian matrix does not agree to measurement indices, expecting " + str(len(Q)) + " total measurements in Jacobian." )
+            
 
         # measurements can have different # of timepoints
         # Nt key: measurement index, value: # of timepoints for this measure
@@ -228,7 +233,7 @@ class MeasurementOptimizer:
         self.cost_list = self.static_cost_measure_info['static_cost'].tolist() # static measurements list
         # add dynamic-cost measurements list 
         # loop over DCM index list
-        for i in dynamic_measurement_idx:
+        for i in self.dynamic_measurement_idx:
             q_ind = measure_info.iloc[i]['Q_index']
             # loop over dynamic-cost measurements time points
             for _ in range(self.Nt[q_ind]):
@@ -267,6 +272,26 @@ class MeasurementOptimizer:
 
         # split Sigma_inv to DCM-DCM error, DCM-SCM error vector, SCM-SCM error matrix 
         self._split_sigma(Sigma)
+
+    def _parse_measure_info(self):
+        """
+        This function decodes information from measure_info dataframe.
+        """
+        # # of static and dynamic measurements
+        static_measurement_idx = self.measure_info[self.measure_info['dynamic_cost']==0].index.values.tolist()
+        dynamic_measurement_idx = self.measure_info[self.measure_info['dynamic_cost']!=0].index.values.tolist()
+        # store static and dynamic measurements dataframe 
+        self.dynamic_cost_measure_info = self.measure_info[self.measure_info['dynamic_cost']!=0]
+        self.static_cost_measure_info = self.measure_info[self.measure_info['dynamic_cost']==0]
+
+        # number of SCMs
+        self.n_static_measurements = len(static_measurement_idx)
+        # SCM indices
+        self.static_measurement_idx = static_measurement_idx
+        # number of DCMs
+        self.n_dynamic_measurements = len(dynamic_measurement_idx)
+        # DCM indices
+        self.dynamic_measurement_idx = dynamic_measurement_idx
 
 
     def _check_measure_info(self):
@@ -627,7 +652,8 @@ class MeasurementOptimizer:
         measurement_matrix: a full measurement matrix, construct the weights for covariances
         """
         # check if measurement vector legal
-        assert len(measurement_vector)==self.total_no_measure, "Measurement vector is of wrong shape!!!"
+        if len(measurement_vector)!=self.total_no_measure:
+            raise ValueError("Measurement vector is of wrong shape, expecting length of"+str(self.total_no_measure))
 
         # initialize measurement matrix as a 2D array
         measurement_matrix = np.zeros((self.total_no_measure, self.total_no_measure))
