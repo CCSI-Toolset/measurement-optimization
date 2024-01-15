@@ -19,8 +19,9 @@ min_interval_num = 10
 # index of columns of SCM and DCM in Q
 static_ind = [0,1,2]
 dynamic_ind = [3,4,5]
+# this index is the number of SCM + nubmer of DCM, not number of DCM timepoints
 all_ind = static_ind+dynamic_ind
-num_total = len(all_ind) 
+num_total_measure = len(all_ind) 
 
 # meausrement names 
 all_names_strategy3 = ["CA.static", "CB.static", "CC.static", 
@@ -39,9 +40,9 @@ dynamic_cost = [0]*len(static_ind)
 dynamic_cost.extend([400]*len(dynamic_ind))
 
 # define manual number maximum 
-max_manual = [max_manual_num]*num_total
+max_manual = [max_manual_num]*num_total_measure
 # define minimal interval time 
-min_time_interval = [min_interval_num]*num_total
+min_time_interval = [min_interval_num]*num_total_measure
 
 # error covariance matrix 
 error_cov = [[1, 0.1, 0.1, 1, 0.1, 0.1],
@@ -54,61 +55,70 @@ error_cov = [[1, 0.1, 0.1, 1, 0.1, 0.1],
 ## change the correlation of DCM VS SCM to half the original value 
 # variance 
 var_list = [1,4,8,1,4,8]
-std_list = [np.sqrt(var_list[i]) for i in range(6)]
+# standard deviation
+std_list = [np.sqrt(var_list[i]) for i in range(len(var_list))]
 
-corr_original = [[0]*6 for i in range(6)]
+# Generate correlation matrix
+corr_original = [[0]*len(var_list) for i in range(len(var_list))]
 
-for i in range(6):
-    for j in range(6):
+# compute correlation, corr[i,j] = cov[i,j]/std[i]/std[j]
+for i in range(len(var_list)):
+    # loop over Nm
+    for j in range(len(var_list)):
         corr_original[i][j] = error_cov[i][j]/std_list[i]/std_list[j]
 
+# DCM-SCM correlations are half of DCM-DCM or SCM-SCM correlation
 corr_num = 0.5
 
-for i in range(3):
-    for j in range(3,6):
+# loop over SCM rows
+for i in range(len(static_ind)):
+    # loop over DCM columns
+    for j in range(len(static_ind), len(var_list)):
+        # correlation matrix is symmetric
+        # we make DCM-SCM correlation half of its original value
         corr_original[i][j] *= corr_num
         corr_original[j][i] *= corr_num 
 
 # update covariance matrix 
-for i in range(6):
-    for j in range(6):
+# change back from correlation matrix
+for i in range(len(var_list)):
+    for j in range(len(var_list)):
         error_cov[i][j] = corr_original[i][j]*std_list[i]*std_list[j]
 
 ## define MO  object 
 measure_info = pd.DataFrame({
-    "name": all_names_strategy3,
-    "Q_index": all_ind,
-        "static_cost": static_cost,
-    "dynamic_cost": dynamic_cost,
-    "min_time_interval": min_time_interval, 
-    "max_manual_number": max_manual
+    "name": all_names_strategy3,  # measurement string names
+    "Q_index": all_ind,  # measurement index in Q
+        "static_cost": static_cost, # static costs 
+    "dynamic_cost": dynamic_cost, # dynamic costs
+    "min_time_interval": min_time_interval, # minimal time interval between two timepoints
+    "max_manual_number": max_manual # maximum number of timepoints 
 })
 dataObject = DataProcess()
 dataObject.read_jacobian('./kinetics_fim/Q_drop0.csv')
 Q = dataObject.get_Q_list([0,1,2], [0,1,2], Nt)
 
-
+# use MeasurementOptimizer to pre-compute the unit FIMs
 calculator = MeasurementOptimizer(Q, measure_info, error_cov=error_cov, error_opt=CovarianceStructure.measure_correlation, verbose=True)
 
 # calculate a list of unit FIMs 
 fim_expect = calculator.fim_computation()
 
-
 ### MO optimization framework 
-
-
 # extract number of SCM, DCM, and total number of measurements
 num_static = len(static_ind)
 num_dynamic  = len(dynamic_ind)
+# this num_total is the summation of number of SCM choices, and number of timepoints in DCMs
 num_total = num_static + num_dynamic*Nt
 
 ### initialize first iteration 
 budget_opt = 3000
 
 # choose what solutions to initialize with 
-#initial_option = "minlp_D"
-initial_option = "milp_A"
-
+#initial_option = "minlp_D" # initialize with minlp_D solutions
+initial_option = "milp_A" # initialize with milp_A solutions
+# initial_option = "lp_A" # iniitalize with lp_A solution 
+# initialize_option = "nlp_D" # initialize with nlp_D solution
 
 # ==== initialization strategy ==== 
 if initial_option == "milp_A":
@@ -117,34 +127,47 @@ if initial_option == "milp_A":
 
 elif initial_option == "minlp_D":
     curr_results = np.linspace(1000, 5000, 11)
-    file_name_pre, file_name_end = './kinetics_results/Oct21_', '_d_mip'
+    file_name_pre, file_name_end = './kinetics_results/Dec9_', '_d_mip'
 
+elif initial_option == "lp_A":
+    curr_results = np.linspace(1000, 5000, 41)
+    file_name_pre, file_name_end = './kinetics_results/May9_', '_a'
+
+elif initial_option == "nlp_D":
+    curr_results = np.linspace(1000, 5000, 41)
+    file_name_pre, file_name_end = './kinetics_results/May4_', '_d'
+
+
+# current results is a range containing the budgets at where the problems are solved 
 curr_results = set([int(curr_results[i]) for i in range(len(curr_results))])
-
 
 ## find if there has been a original solution for the current budget
 if budget_opt in curr_results: # use an existed initial solutioon
     curr_budget = budget_opt
 
 else:
-    # if not, find the closest budget
-    curr_min_diff = float("inf")
-    curr_budget = 5000
-
+    # if not, find the closest budget, and use this as the initial point
+    curr_min_diff = float("inf") # current minimal budget difference 
+    curr_budget = 5000 # starting point
+    
+    # find the existing budget that minimize curr_min_diff
     for i in curr_results:
+        # if we found an existing budget that is closer to the given budget
         if abs(i-budget_opt) < curr_min_diff:
             curr_min_diff = abs(i-budget_opt)
             curr_budget = i
 
     print("using solution at", curr_budget, " too initialize")
 
-
+# assign solution file names, and FIM file names
 y_init_file = file_name_pre+str(curr_budget)+file_name_end
 fim_init_file = file_name_pre+'fim_'+str(curr_budget)+file_name_end
 
+# read y 
 with open(y_init_file, 'rb') as f:
     init_cov_y = pickle.load(f)
 
+# Round possible float solution to be integer 
 for i in range(num_total):
     for j in range(num_total):
         if init_cov_y[i][j] > 0.99:
@@ -152,22 +175,28 @@ for i in range(num_total):
         else:
             init_cov_y[i][j] = int(0)
             
+# initialize total manual number 
 total_manual_init = 0 
+# initialize the DCM installation flags
 dynamic_install_init = [0,0,0]
 
-# round solutions i[]
+# round solutions
+# if floating solutions, if value > 0.01, we count it as an integer decision that is 1 or positive
 for i in range(num_static,num_total):
     if init_cov_y[i][i] > 0.01:
         total_manual_init += 1 
         
+        # identify which DCM this timepoint belongs to, turn the installation flag to be positive 
         i_pos = int((i-num_static)/Nt)
         dynamic_install_init[i_pos] = 1
         
+# compute total measurements number, this is for integer cut
 total_measure_init = sum(init_cov_y[i][i] for i in range(num_total))
         
-# initialize cost 
+# initialize cost, this cost is calculated by the given initial solution
 cost_init = sum(dynamic_install_init)*200+total_manual_init*400 + (init_cov_y[0][0]+init_cov_y[1][1]+init_cov_y[2][2])*2000
 
+# read FIM, initialize FIM and logdet
 with open(fim_init_file, 'rb') as f:
     fim_prior = pickle.load(f)
     det = np.linalg.det(fim_prior)
@@ -178,7 +207,7 @@ for i in range(4):
 
 
 mip_option = True
-objective = ObjectiveLib.A
+objective = ObjectiveLib.D
 fixed_nlp_opt = False
 mix_obj_option = False
 alpha_opt = 0.9
@@ -190,14 +219,15 @@ manual_num = 10
 
 num_dynamic_time = np.linspace(0,60,9)
 
-static_dynamic = [[0,3],[1,4],[2,5]]
+static_dynamic = [[0,3],[1,4],[2,5]] # These pairs cannot be chosen simultaneously
 time_interval_for_all = True
 
+# map the timepoint index to its real time
 dynamic_time_dict = {}
 for i, tim in enumerate(num_dynamic_time[1:]):
     dynamic_time_dict[i] = np.round(tim, decimals=2)
 
-
+t1 = time.time()
 mod = calculator.continuous_optimization(mixed_integer=mip_option, 
                       obj=objective, 
                     mix_obj = mix_obj_option, alpha = alpha_opt,fixed_nlp = fixed_nlp_opt,
@@ -216,11 +246,14 @@ mod = calculator.continuous_optimization(mixed_integer=mip_option,
                                         FIM_diagonal_small_element=0.0001,
                                         print_level=1)
 
-t1 = time.time()
-mod = calculator.solve(mod, mip_option=mip_option, objective = objective)
 t2 = time.time()
-print("solver wall clock time:", t2-t1)
+mod = calculator.solve(mod, mip_option=mip_option, objective = objective)
+t3 = time.time()
+
+print("model and solver wall clock time:", t3-t1)
+print("solver wall clock time:", t3-t2)
     
+
 fim_result = np.zeros((4,4))
 for i in range(4):
     for j in range(i,4):

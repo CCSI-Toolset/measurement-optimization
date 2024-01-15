@@ -5,12 +5,12 @@ from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxM
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxBlock
 
 class LogDetModel(ExternalGreyBoxModel):
-    """Greybox model to compute the log determinant of a matrix.
-    """
     def __init__(self, n_parameters=2, initial_fim=None, use_exact_derivatives=True,print_level=0):
         """
-        Parameters
+        Greybox model to compute the log determinant of a matrix.
 
+        Arguments
+        ---------
         n_parameters: int 
             Number of parameters in the matrix.
         initial_fim: dict
@@ -23,6 +23,10 @@ class LogDetModel(ExternalGreyBoxModel):
             1: minimal info
             2: intermediate 
             3: everything
+
+        Return 
+        ------
+        None
         """
         self._use_exact_derivatives = use_exact_derivatives
         self.print_level = print_level 
@@ -35,15 +39,25 @@ class LogDetModel(ExternalGreyBoxModel):
             #print(self._input_values)
         
         # variable to store the output value 
+        # Output constraint multiplier values. This is a 1-element vector because there is one output
         self._output_con_mult_values = np.zeros(1)
 
         if not use_exact_derivatives:
             raise NotImplementedError("use_exact_derivatives == False not supported")
         
     def input_names(self):
-        """Return the names of the inputs."""
+        """Return the names of the inputs.
+        Define only the upper triangle of FIM because FIM is symmetric
+
+        Return
+        ------
+        input_name_list: a list of the names of inputs
+        """  
+        # store the input names strings
         input_name_list = []
+        # loop over parameters
         for i in range(self.n_parameters):
+            # loop over upper triangle
             for j in range(i,self.n_parameters):
                 input_name_list.append((i,j))
                 
@@ -59,32 +73,50 @@ class LogDetModel(ExternalGreyBoxModel):
         return ['log_det']
 
     def set_output_constraint_multipliers(self, output_con_multiplier_values):
-        """Set the values of the output constraint multipliers."""
-        # because we only have one output constraint
+        """
+        Set the values of the output constraint multipliers.
+        
+        Arguments
+        ---------
+        output_con_multiplier_values: a scalar number for the output constraint multipliers
+        """
+        # because we only have one output constraint, the length is 1
         assert len(output_con_multiplier_values) == 1
         np.copyto(self._output_con_mult_values, output_con_multiplier_values)
 
     def finalize_block_construction(self, pyomo_block):
-        """Finalize the construction of the ExternalGreyBoxBlock."""
+        """
+        Finalize the construction of the ExternalGreyBoxBlock.
+        This function initializes the inputs with an initial value 
+
+        Arguments
+        ---------
+        pyomo_block: pass the created pyomo block here 
+        """
+        # ele_to_order map the input position in FIM, like (a,b), to its flattend index 
+        # for e.g., ele_to_order[(0,0)] = 0
         ele_to_order = {}
         count  = 0
-        # initialize, set up LB and UB
-        # only generating upper triangular part
-        # loop over parameters
-        if self.initial_fim is not None:
-            if self.print_level > 1: 
+
+        if self.print_level > 1: 
+            if self.initial_fim is not None:
                 print("Grey-box initialize inputs with: ", self.initial_fim)
 
+        # only generating upper triangular part
+        # loop over parameters
         for i in range(self.n_parameters):
             # loop over parameters from current parameter to end
             for j in range(i, self.n_parameters):
                 # flatten (i,j)
                 ele_to_order[(i,j)], ele_to_order[(j,i)] = count, count 
+                # this tuple is the position of this input in the FIM
                 str_name = (i,j)
                 
+                # if an initial FIM is given, we can initialize with these values
                 if self.initial_fim is not None:
                     pyomo_block.inputs[str_name].value = self.initial_fim[str_name]
                     
+                # if not given initial FIM, we initialize with an identity matrix
                 else:
                     # identity matrix 
                     if i==j:
@@ -97,7 +129,13 @@ class LogDetModel(ExternalGreyBoxModel):
         self.ele_to_order = ele_to_order
 
     def set_input_values(self, input_values):
-        """Set the values of the inputs."""
+        """
+        Set the values of the inputs.
+        
+        Arguments
+        ---------
+        input_values: input initial values
+        """
         self._input_values = list(input_values)
 
     def evaluate_equality_constraints(self):
@@ -106,7 +144,14 @@ class LogDetModel(ExternalGreyBoxModel):
         return None
     
     def evaluate_outputs(self):
-        """Evaluate the output of the model."""
+        """
+        Evaluate the output of the model.
+        We call numpy here to compute the logdet of FIM. slogdet is used to avoid ill-conditioning issue
+
+        Return
+        ------
+        logdet: a one-element numpy array, containing the log det value as float
+        """
         # form matrix as a list of lists
         M = self._extract_and_assemble_fim()
 
@@ -128,7 +173,16 @@ class LogDetModel(ExternalGreyBoxModel):
         return None
     
     def _extract_and_assemble_fim(self):
+        """
+        This function make the flattened inputs back into the shape of an FIM
+
+        Return 
+        ------
+        M: a numpy array containing FIM.
+        """
+        # FIM shape Np*Np
         M = np.zeros((self.n_parameters, self.n_parameters))
+        # loop over parameters. We are getting all positions in FIM, not just upper diagonal 
         for i in range(self.n_parameters):
             for k in range(self.n_parameters):                
                 M[i,k] = self._input_values[self.ele_to_order[(i,k)]]
@@ -136,7 +190,14 @@ class LogDetModel(ExternalGreyBoxModel):
         return M
 
     def evaluate_jacobian_outputs(self):
-        """Evaluate the Jacobian of the outputs."""
+        """
+        Evaluate the Jacobian of the outputs.
+
+        Return
+        ------
+        A sparse matrix, containing the first order gradient of the OBJ, in the shape [1,N_input]
+        where N_input is the No. of off-diagonal elements//2 + Np
+        """
         if self._use_exact_derivatives:
             M = self._extract_and_assemble_fim()
 
