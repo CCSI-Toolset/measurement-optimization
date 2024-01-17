@@ -1,37 +1,47 @@
-# measurement-opt
+# Measurement Optimization 
 
-## Required dependencies 
+This repository contains code and results for paper: Measure this, not that: Optimizing the cost and model-based information content of measurements 
+
+## Installation instructions 
 
 How to create an environment to run code: 
 
-1. create new environment with `Conda` with `python` version 3.8
+### Step 1: create a new environment 
+- create new environment, called for e.g. `measurement_optimization`, with `conda` with `Python` version 3.8
 
-  `conda create --name <env_name> python=3.8`
+`conda create --name measurement_optimization python=3.8`
+
+`conda activate measurement_optimization`
    
-2. install `IDAES-PSE`
+### Step 2: install `IDAES-PSE`
+- this step provides `Ipopt` solver, but this solver is not necessary for reproducing paper results
+- we did not test if the code can run without this step
 
-  `pip install idaes-pse` 
-  `idaes get-extensions`
+`pip install idaes-pse` 
+
+`idaes get-extensions`
    
-3. install `Pyomo` from specified branches
-
-  branch for kinetic case study: 
+### Step 3: install `Pyomo` from specified branches
+- a generalization version is under working. For now, we use two different branches for each case study:
+- branch for kinetic case study: 
 
   `pip install git+https://github.com/jialuw96/pyomo.git@MindtpyReactor`
 
-  branch for rotary bed case study: 
-  
+- branch for rotary bed case study: 
+
   `pip install git+https://github.com/jialuw96/pyomo.git@MindtpyRotary`
    
-4. install `GurobiPy`. This is needed only for solving mixed-integer problems
+### Step 4: install `GurobiPy`
+- this is needed only for solving mixed-integer problems
 
   `conda install -c gurobi gurobi`
    
-5. install `CyIpopt`. This is needed only for D-optimality problems with grey-box modules
+### Step 5: install `CyIpopt`
+- this is needed only for D-optimality problems with grey-box modules
 
    `conda install -c conda-forge cyipopt`
 
-Software versions we use for the results: 
+### Software versions we use for the results 
 
 `Python`: 3.8
 
@@ -53,10 +63,12 @@ Software versions we use for the results:
 
 - `rotary_bed_MO.py`: Rotary bed case study
 
-- `Draw_figure.ipynb`: Figure draw 
+- `Draw_figure.ipynb`: Generates all results figures in the manuscript
 
 
-## Example to run code for case studies 
+## Example to run code for case studies
+
+Setup the scripts to reproduce results from the paper: 
 
 run `kinetics_MO.py`
 - change budgets with the variable `budget_opt`
