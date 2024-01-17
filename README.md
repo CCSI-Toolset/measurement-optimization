@@ -70,33 +70,61 @@ How to create an environment to run code:
 
 Setup the scripts to reproduce results from the paper: 
 
-run `kinetics_MO.py`
-- change budgets with the variable `budget_opt`
+### Kinetics case study 
+
+- Step 1: run `kinetics_MO.py`
+- Step 2: change budgets with the variable `budget_opt`
+- Step 3: use draw_figure.ipynb
+
+### Rotary bed case study 
 
 run `rotary_bed_MO.py`
 - change budgets with the variable `budget_opt`
-
-
-
 
 ## Source files
 
 ### Kinetics case study 
 
-- `./kinetics_source_data/reactor_kinetics.py`: kinetics case study model
-- `./kinetics_source_data/Q_drop0.csv`: contain Jacobian
+- `./kinetics_source_data/reactor_kinetics.py`: kinetics case study model  
+- `./kinetics_source_data/Q_drop0.csv`: contain Jacobian for this case study, data structure as the following:
+  
+  0   |  A1  |  A2  |  E1  |  E2  |
+  
+  1   |  num | num  | num  | num  |
+
+  ...
+
+  24  |  num | num  | num  | num  |
+
+  Rows: measurements (C_A, C_B, C_C, each measurement has 8 time points)
+  Columns: parameters (4 parameters)
 
 ### Rotary bed case study 
 
 - `./rotary_source_data/RotaryBed-DataProcess.ipynb`: process rotary bed measurements data from `Aspen Custom Modeler`, generate Jacobian
-- `./rotary_source_data/Q110_scale.csv`: contain Jacobian for paper results
+- `./rotary_source_data/Q110_scale.csv`: contain Jacobian for this case study, data structure as the following:
+
+  0   |  MTC  |  HTC  |  DH  |  ISO1  |  ISO2 |
+   
+  1   |  num | num  | num  | num  | num |
+
+  ...
+
+  1540  |  num | num  | num  | num  | num |
+
+  Rows: measurements (14 measurements, each has 110 time points)
+  Columns: parameters (5 parameters)
 
 
 ## Result files 
 
 ### Kinetics case study 
 
-#### FIM of optimal solutions
+#### FIM of final results 
+
+An example name: `May9_fim_1000_a`, the results of A-optimality LP problem of a budget of 1000 
+
+Data file type: `pickle`, storing a numpy array of FIM
 
 - A-optimality LP results: `kinetics_results/May9_fim_x_a`, x in the range [1000, 1100, 1200, ..., 5000]
 
@@ -109,6 +137,10 @@ run `rotary_bed_MO.py`
 - Operating cost results: `kinetics_results/Dec12_fim_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
 
 #### Optimal solutions
+
+An example name: `May9_1000_a`, the results of A-optimality LP problem of a budget of 1000 
+
+Data file type: `pickle`, storing a numpy array of the solutions
 
 - A-optimality LP results: `kinetics_results/May9_x_a`, x in the range [1000, 1100, 1200, ..., 5000]
 
