@@ -122,35 +122,35 @@ run `rotary_bed_MO.py`
 
 #### FIM of final results 
 
-An example name: `May9_fim_1000_a`, the results of A-optimality LP problem of a budget of 1000 
+An example name: `LP_fim_1000_a`, the results of A-optimality LP problem of a budget of 1000 
 
 Data file type: `pickle`, storing a numpy array of FIM
 
-- A-optimality LP results: `kinetics_results/May9_fim_x_a`, x in the range [1000, 1100, 1200, ..., 5000]
+- A-optimality LP results: `kinetics_results/LP_fim_x_a`, x in the range [1000, 1100, 1200, ..., 5000]
 
-- A-optimality MILP results: `kinetics_results/May2_fim_x_a`, x in the range [1000, 1400, 1800, ..., 5000]
+- A-optimality MILP results: `kinetics_results/MILP_fim_x_a`, x in the range [1000, 1400, 1800, ..., 5000]
 
-- D-optimality NLP results: `kinetics_results/May4_fim_x_d`, x in the range [1000, 1100, 1200, ..., 5000]
+- D-optimality NLP results: `kinetics_results/NLP_fim_x_d`, x in the range [1000, 1100, 1200, ..., 5000]
 
-- D-optimality MINLP results: `kinetics_results/Dec9_fim_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
+- D-optimality MINLP results: `kinetics_results/MINLP_fim_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
 
-- Operating cost results: `kinetics_results/Dec12_fim_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
+- Operating cost results: `kinetics_results/Operate_fim_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
 
 #### Optimal solutions
 
-An example name: `May9_1000_a`, the results of A-optimality LP problem of a budget of 1000 
+An example name: `LP_1000_a`, the results of A-optimality LP problem of a budget of 1000 
 
 Data file type: `pickle`, storing a numpy array of the solutions
 
-- A-optimality LP results: `kinetics_results/May9_x_a`, x in the range [1000, 1100, 1200, ..., 5000]
+- A-optimality LP results: `kinetics_results/LP_x_a`, x in the range [1000, 1100, 1200, ..., 5000]
 
-- A-optimality MILP results: `kinetics_results/May2_x_a`, x in the range [1000, 1400, 1800, ..., 5000]
+- A-optimality MILP results: `kinetics_results/MILP_x_a`, x in the range [1000, 1400, 1800, ..., 5000]
 
-- D-optimality NLP results: `kinetics_results/May4_x_d`, x in the range [1000, 1100, 1200, ..., 5000]
+- D-optimality NLP results: `kinetics_results/NLP_x_d`, x in the range [1000, 1100, 1200, ..., 5000]
 
-- D-optimality MINLP results: `kinetics_results/Dec9_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
+- D-optimality MINLP results: `kinetics_results/MINLP_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
 
-- Operating cost results: `kinetics_results/Dec12_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
+- Operating cost results: `kinetics_results/Operate_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
 
 #### Computational details 
 
@@ -168,23 +168,23 @@ Data file type: `pickle`, storing a numpy array of the solutions
 
 #### FIM of optimal solutions
 
-- A-optimality LP results: `rotary_results/May12_fim_x_a`, x in the range [1000, 2000, 3000, ..., 25000]
+- A-optimality LP results: `rotary_results/LP_fim_x_a`, x in the range [1000, 2000, 3000, ..., 25000]
 
-- A-optimality MILP results: `rotary_results/Apr17_FIM_A_mip_x`, x in the range [1000, 2000, 3000, ..., 25000]
+- A-optimality MILP results: `rotary_results/MILP_FIM_A_mip_x`, x in the range [1000, 2000, 3000, ..., 25000]
 
-- D-optimality NLP results: `rotary_results/May10_fim_x_d`, x in the range [1000, 2000, 3000, ..., 25000]
+- D-optimality NLP results: `rotary_results/NLP_fim_x_d`, x in the range [1000, 2000, 3000, ..., 25000]
 
-- D-optimality MINLP results: `rotary_results/Dec7_fim_x_d_mip`, x in the range [1000, 2000, 3000, ..., 25000]
+- D-optimality MINLP results: `rotary_results/MILP_fim_x_d_mip`, x in the range [1000, 2000, 3000, ..., 25000]
 
 #### Optimal solutions
 
-- A-optimality LP results: `rotary_results/May12_x_a`, x in the range [1000, 2000, 3000, ..., 25000]
+- A-optimality LP results: `rotary_results/LP_x_a`, x in the range [1000, 2000, 3000, ..., 25000]
 
-- A-optimality MILP results: `rotary_results/Apr17_A_mip_x`, x in the range [1000, 2000, 3000, ..., 25000]
+- A-optimality MILP results: `rotary_results/MILP_A_mip_x`, x in the range [1000, 2000, 3000, ..., 25000]
 
-- D-optimality NLP results: `rotary_results/May10_x_d`, x in the range [1000, 2000, 3000, ..., 25000]
+- D-optimality NLP results: `rotary_results/NLP_x_d`, x in the range [1000, 2000, 3000, ..., 25000]
 
-- D-optimality MINLP results: `rotary_results/Dec7_x_d_mip`, x in the range [1000, 2000, 3000, ..., 25000]
+- D-optimality MINLP results: `rotary_results/MILP_x_d_mip`, x in the range [1000, 2000, 3000, ..., 25000]
 
 #### Computational details 
 
