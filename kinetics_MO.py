@@ -29,19 +29,22 @@ all_names_strategy3 = ["CA.static", "CB.static", "CC.static",
 
 # define static costs 
 static_cost = [2000, # CA
-    2000, # CB
-     2000, # CC
-    200, # CA
-    200, # CB
-     200] # CC
+                2000, # CB
+                2000, # CC
+                200, # CA
+                200, # CB
+                200] # CC
 
-# define dynamic costs 
+# each static-cost measure has no per-sample cost 
 dynamic_cost = [0]*len(static_ind)
+# each dynamic-cost measure costs $ 400 per sample
 dynamic_cost.extend([400]*len(dynamic_ind))
 
 # define manual number maximum 
+# it is extended to the same length as measurements, so it can be one column of DataFrame
 max_manual = [max_manual_num]*num_total_measure
 # define minimal interval time 
+# it is extended to the same length as measurements, so it can be one column of DataFrame
 min_time_interval = [min_interval_num]*num_total_measure
 
 # error covariance matrix 
@@ -87,16 +90,21 @@ for i in range(len(var_list)):
 
 ## define MO  object 
 measure_info = pd.DataFrame({
-    "name": all_names_strategy3,  # measurement string names
-    "Q_index": all_ind,  # measurement index in Q
+        "name": all_names_strategy3,  # measurement string names
+        "Q_index": all_ind,  # measurement index in Q
         "static_cost": static_cost, # static costs 
-    "dynamic_cost": dynamic_cost, # dynamic costs
-    "min_time_interval": min_time_interval, # minimal time interval between two timepoints
-    "max_manual_number": max_manual # maximum number of timepoints 
-})
+        "dynamic_cost": dynamic_cost, # dynamic costs
+        "min_time_interval": min_time_interval, # minimal time interval between two timepoints
+        "max_manual_number": max_manual # maximum number of timepoints 
+        })
+
+# create data object to pre-compute Qs 
 dataObject = DataProcess()
+# read jacobian from the source csv
 dataObject.read_jacobian('./kinetics_fim/Q_drop0.csv')
-Q = dataObject.get_Q_list([0,1,2], [0,1,2], Nt)
+Q = dataObject.get_Q_list([0,1,2], # the index of CA, CB, CC in the jacobian array
+                          [0,1,2], # the index of CA, CB, CC in the jacobian array
+                          Nt) # the number of time points for each measurement
 
 # use MeasurementOptimizer to pre-compute the unit FIMs
 calculator = MeasurementOptimizer(Q, measure_info, error_cov=error_cov, error_opt=CovarianceStructure.measure_correlation, verbose=True)

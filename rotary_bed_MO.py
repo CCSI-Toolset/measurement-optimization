@@ -43,44 +43,51 @@ error_mat = [[0]*len(all_names_strategy3) for _ in range(len(all_names_strategy3
 for _ in range(len(all_names_strategy3)):
     error_mat[_][_] = error_variance[_]
 
-# define static cost
+# define static cost for static-cost measures
 static_cost = [1000, #ads.gas_inlet.F (0)
-    1000, #ads.gas_outlet.F (1)
-     500, #ads.gas_outlet.T (2)
-    1000, #des.gas_inlet.F (4)
-    1000, #des.gas_outlet.F (5)
-     500, #des.gas_outlet.T (6)
-     1000, #ads.T19 (8)
-     1000, #ads.T23 (9)
-     1000, #ads.T28 (10)
-    7000,
-    7000] 
+                1000, #ads.gas_outlet.F (1)
+                500, #ads.gas_outlet.T (2)
+                1000, #des.gas_inlet.F (4)
+                1000, #des.gas_outlet.F (5)
+                500, #des.gas_outlet.T (6)
+                1000, #ads.T19 (8)
+                1000, #ads.T23 (9)
+                1000, #ads.T28 (10)
+                7000,
+                7000] 
 
+# define static cost (installaion) for dynamic-cost
 static_cost.extend([100, 100, 500, 500, 500])
 # define dynamic cost
+# each static-cost measure has no per-sample cost 
 dynamic_cost = [0]*len(static_ind) # SCM has no installaion costs
+# each dynamic-cost measure costs $ 100 per sample
 dynamic_cost.extend([100]*len(dynamic_ind)) # 100 is the cost of each time point
 
 # define manual number maximum 
+# it is extended to the same length as measurements, so it can be one column of DataFrame
 max_manual = [max_manual_num]*num_total_measure
 # define minimal interval time 
+# it is extended to the same length as measurements, so it can be one column of DataFrame
 min_time_interval = [min_interval_num]*num_total_measure
 
 measure_info = pd.DataFrame({
-    "name": all_names_strategy3,  # measurement string names
-    "Q_index": all_ind, # measurement index in Q
+        "name": all_names_strategy3,  # measurement string names
+        "Q_index": all_ind, # measurement index in Q
         "static_cost": static_cost,  # static costs
-    "dynamic_cost": dynamic_cost,  # dynamic costs
-    "min_time_interval": min_time_interval, # minimal time interval between two timepoints
-    "max_manual_number": max_manual  # maximum number of timepoints 
-})
+        "dynamic_cost": dynamic_cost,  # dynamic costs
+        "min_time_interval": min_time_interval, # minimal time interval between two timepoints
+        "max_manual_number": max_manual  # maximum number of timepoints 
+        })
 
 
 ### Calculate FIM
 dataObject = DataProcess()
 dataObject.read_jacobian('./RotaryBed/Q'+str(Nt)+'_scale.csv')
-Q = dataObject.get_Q_list([0,1,2,4,5,6,8,9,10,3,7],
-                        [3,7,11,12,13], Nt)
+Q = dataObject.get_Q_list(
+                        [0,1,2,4,5,6,8,9,10,3,7],  # the index of static-cost measures in the jacobian array
+                        [3,7,11,12,13],  # the index of dynamic-cost measures in the jacobian array
+                        Nt) # the number of time points for each measurement
 
 # define with the error structure
 calculator = MeasurementOptimizer(Q, measure_info, error_cov = error_mat,  
