@@ -19,10 +19,17 @@ class LogDetModel(ExternalGreyBoxModel):
             If True, the exact derivatives are used. 
             If False, the finite difference approximation can be used, but not recommended/tested.
         print_level: integer
-            0 (default): no any process information 
-            1: minimal info
-            2: intermediate 
-            3: everything
+            0 (default): no extra output
+            1: minimal info to indicate if initialized well
+                print the following: 
+                - initial FIM received by the grey-box moduel 
+            2: intermediate info for debugging
+                print all the level 1 print statements, plus: 
+                - the FIM output of the current iteration, both the output as the FIM matrix, and the flattened vector
+            3: all details for debugging
+                print all the level 2 print statements, plus:
+                - the log determinant of the FIM output of the current iteration 
+                - the eigen values of the FIM output of the current iteration 
 
         Return 
         ------
@@ -33,9 +40,6 @@ class LogDetModel(ExternalGreyBoxModel):
         self.n_parameters = n_parameters
         self.num_input = int(n_parameters + (n_parameters*n_parameters-n_parameters)//2)
         self.initial_fim = initial_fim
-        
-        if self.print_level > 1:
-            print("\n Create grey-box with\n", initial_fim)
         
         # variable to store the output value 
         # Output constraint multiplier values. This is a 1-element vector because there is one output
@@ -97,9 +101,11 @@ class LogDetModel(ExternalGreyBoxModel):
         ele_to_order = {}
         count  = 0
 
-        if self.print_level > 1: 
+        if self.print_level >= 1: 
             if self.initial_fim is not None:
                 print("Grey-box initialize inputs with: ", self.initial_fim)
+            else: 
+                print("Grey-box initialize inputs with an identity matrix.")
 
         # only generating upper triangular part
         # loop over parameters
@@ -158,13 +164,13 @@ class LogDetModel(ExternalGreyBoxModel):
         # compute log determinant
         (sign, logdet) = np.linalg.slogdet(M)
 
-        if self.print_level > 1:
-            print("\n Consider M =\n",M)
-            print(self._input_values)
-            print("   logdet = ",logdet,"\n")
-            print("Eigvals:", np.linalg.eigvals(M))
+        if self.print_level >= 2:
             print("iteration")
+            print("\n Consider M =\n",M)
             print("Solution: ", self._input_values)
+            if self.print_level ==3:
+                print("   logdet = ",logdet,"\n")
+                print("Eigvals:", np.linalg.eigvals(M))
 
         return np.asarray([logdet], dtype=np.float64)
 
