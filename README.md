@@ -118,13 +118,18 @@ run `rotary_bed_MO.py`
 
 ## Result files 
 
-### Kinetics case study 
+### Kinetics case study
+
+At each budget, the FIM result and the optimal solution are stored separately in `pickle` files. 
+Computational details including solver time and numbers of operations are also stored separately in `pickle` files.
 
 #### FIM of final results 
 
 An example name: `LP_fim_1000_a`, the results of A-optimality LP problem of a budget of 1000 
 
-Data file type: `pickle`, storing a numpy array of FIM
+Data file type: `pickle`, storing a numpy array of FIM of the shape Np*Np, Np is the number of parameters 
+
+To replicate the results, iterate in the given budget range to retrieve the FIM stored in each data file
 
 - A-optimality LP results: `kinetics_results/LP_fim_x_a`, x in the range [1000, 1100, 1200, ..., 5000]
 
@@ -140,7 +145,7 @@ Data file type: `pickle`, storing a numpy array of FIM
 
 An example name: `LP_1000_a`, the results of A-optimality LP problem of a budget of 1000 
 
-Data file type: `pickle`, storing a numpy array of the solutions
+Data file type: `pickle`, storing a numpy array of the solutions of the shape Nm*Nm, Nm is the number of all measurements
 
 - A-optimality LP results: `kinetics_results/LP_x_a`, x in the range [1000, 1100, 1200, ..., 5000]
 
@@ -154,6 +159,15 @@ Data file type: `pickle`, storing a numpy array of the solutions
 
 #### Computational details 
 
+The computational details are stored separately. 
+
+For A-optimality LP and MILP problems, the `pickle` files store a numpy array of the solver time of each budget 
+
+For D-optimality NLP and MINLP problems, the `pickle` files store a dictionary, where the keys are the budgets. An example is: 
+
+nlp_time={1000: {"t": 0.01, "n": 10}, ..., "5000": {"t": 0.01, "n": 10}}
+
+For each budget, the value is a dictionary where the key `t` stores the solver time, `n` stores the number of iterations
 
 - A-optimality LP solver time: "kinetics_time_lp"
 
@@ -166,7 +180,17 @@ Data file type: `pickle`, storing a numpy array of the solutions
 
 ### Rotary bed case study 
 
+At each budget, the FIM result and the optimal solution are stored separately in `pickle` files. 
+Computational details including solver time and numbers of operations are also stored separately in `pickle` files.
+
+
 #### FIM of optimal solutions
+
+An example name: `LP_fim_1000_a`, the results of A-optimality LP problem of a budget of 1000 
+
+Data file type: `pickle`, storing a numpy array of FIM of the shape Np*Np, Np is the number of parameters 
+
+To replicate the results, iterate in the given budget range to retrieve the FIM stored in each data file
 
 - A-optimality LP results: `rotary_results/LP_fim_x_a`, x in the range [1000, 2000, 3000, ..., 25000]
 
@@ -178,6 +202,11 @@ Data file type: `pickle`, storing a numpy array of the solutions
 
 #### Optimal solutions
 
+An example name: `LP_1000_a`, the results of A-optimality LP problem of a budget of 1000 
+
+Data file type: `pickle`, storing a numpy array of the solutions of the shape Nm*Nm, Nm is the number of all measurements
+
+
 - A-optimality LP results: `rotary_results/LP_x_a`, x in the range [1000, 2000, 3000, ..., 25000]
 
 - A-optimality MILP results: `rotary_results/MILP_A_mip_x`, x in the range [1000, 2000, 3000, ..., 25000]
@@ -187,6 +216,16 @@ Data file type: `pickle`, storing a numpy array of the solutions
 - D-optimality MINLP results: `rotary_results/MILP_x_d_mip`, x in the range [1000, 2000, 3000, ..., 25000]
 
 #### Computational details 
+
+The computational details are stored separately. 
+
+For A-optimality LP and MILP problems, the `pickle` files store a numpy array of the solver time of each budget 
+
+For D-optimality NLP and MINLP problems, the `pickle` files store a dictionary, where the keys are the budgets. An example is: 
+
+nlp_time={1000: {"t": 0.01, "n": 10}, ..., "5000": {"t": 0.01, "n": 10}}
+
+For each budget, the value is a dictionary where the key `t` stores the solver time, `n` stores the number of iterations
 
 - A-optimality LP solver time: `rotary_time_lp`
 
