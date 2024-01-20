@@ -7,19 +7,19 @@ from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxB
 class LogDetModel(ExternalGreyBoxModel):
     def __init__(self, n_parameters=2, initial_fim=None, use_exact_derivatives=True,print_level=0):
         """
-        Greybox model to compute the log determinant of a matrix.
+        Greybox model to compute the log determinant of a sqaure symmetric matrix.
 
         Arguments
         ---------
         n_parameters: int 
-            Number of parameters in the matrix.
+            Number of parameters in the model. The square symmetric matrix is of shape n_parameters*n_parameters
         initial_fim: dict
             Initial value of the matrix. If None, the identity matrix is used.
         use_exact_derivatives: bool 
-            If True, the exact derivatives are used. If False, the finite difference
-            approximation is used.
+            If True, the exact derivatives are used. 
+            If False, the finite difference approximation can be used, but not recommended/tested.
         print_level: integer
-            0 (default): no process information 
+            0 (default): no any process information 
             1: minimal info
             2: intermediate 
             3: everything
@@ -36,7 +36,6 @@ class LogDetModel(ExternalGreyBoxModel):
         
         if self.print_level > 1:
             print("\n Create grey-box with\n", initial_fim)
-            #print(self._input_values)
         
         # variable to store the output value 
         # Output constraint multiplier values. This is a 1-element vector because there is one output
@@ -139,8 +138,9 @@ class LogDetModel(ExternalGreyBoxModel):
         self._input_values = list(input_values)
 
     def evaluate_equality_constraints(self):
-        """Evaluate the equality constraints."""
-        # Not sure what this function should return with no equality constraints
+        """Evaluate the equality constraints.
+        Return None because there are no equality constraints.
+        """
         return None
     
     def evaluate_outputs(self):
@@ -182,7 +182,9 @@ class LogDetModel(ExternalGreyBoxModel):
         """
         # FIM shape Np*Np
         M = np.zeros((self.n_parameters, self.n_parameters))
-        # loop over parameters. We are getting all positions in FIM, not just upper diagonal 
+        # loop over parameters. 
+        # Alternately, ele_to_order only includes the upper triangle. 
+        # Expand here to be the full matrix.  
         for i in range(self.n_parameters):
             for k in range(self.n_parameters):                
                 M[i,k] = self._input_values[self.ele_to_order[(i,k)]]
@@ -210,16 +212,17 @@ class LogDetModel(ExternalGreyBoxModel):
             data = np.zeros(self.num_input) # to store data
             
             # construct gradients as a sparse matrix 
+            # loop over the upper triangular
             # loop over parameters
             for i in range(self.n_parameters):
                 # loop over parameters from current parameter to end
                 for j in range(i, self.n_parameters):
                     order = self.ele_to_order[i,j]
-                    # diagonal elements
+                    # diagonal elements. See Eq. 16 in paper for explanation
                     if i==j: 
                         row[order], col[order], data[order] = (0,order, Minv[i,j])
                     # off-diagonal elements
-                    else: # factor = 2 since it is a symmetric matrix
+                    else: # factor = 2 since it is a symmetric matrix. See Eq. 16 in paper for explanation
                         row[order], col[order], data[order] = (0,order, 2*Minv[i,j])
             # sparse matrix
             return coo_matrix((data, (row, col)), shape=(1, self.num_input))
