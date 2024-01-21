@@ -208,6 +208,26 @@ class MeasurementData:
     min_time_interval: float
     max_num_sample: int 
     
+    def check_type(self):
+        """This function is to check if the input types are consistent with what this class expects.
+        """
+        # flag to check if there is any wrong type
+        ret = True
+        # loop over all names of this dataclass
+        for field_name, field_def in self.__dataclass_fields__.items():
+            # get the actual type we get from the user's input
+            actual_type = type(getattr(self, field_name))
+            # check if the actual type is the same with what we expect
+            if actual_type != field_def.type:
+                print(f"\t{field_name}: '{actual_type}' instead of '{field_def.type}'")
+                ret = False
+        return ret
+        
+    def __post_init__(self):
+        """This is added for error checking. 
+        """
+        if not self.check_type():
+            raise ValueError("Wrong types")
 
 class MeasurementOptimizer:
     def __init__(self, jac, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, verbose=True):
@@ -328,22 +348,6 @@ class MeasurementOptimizer:
         # DCM indices
         self.dynamic_measurement_idx = dynamic_measurement_idx
 
-
-    def _check_measure_info(self):
-        """Check if the measure_info dataframe is successfully built with all information
-        """
-        if "name" not in self.measure_info:
-            raise ValueError("measure_info must have a column named 'name'")
-        if "Q_index" not in self.measure_info:
-            raise ValueError("measure_info must have a column named 'Q_index'")
-        if "dynamic_cost" not in self.measure_info:
-            raise ValueError("measure_info must have a column named 'dynamic_cost'")
-        if "static_cost" not in self.measure_info:
-            raise ValueError("measure_info must have a column named 'static_cost'")
-        if "min_time_interval" not in self.measure_info:
-            raise ValueError("measure_info must have a column named 'min_time_interval'")
-        if "max_manual_number" not in self.measure_info:
-            raise ValueError("measure_info must have a column named 'max_manual_number'")
         
     def _check_sigma(self, error_cov, error_option):
         """ Check sigma inputs shape and values
