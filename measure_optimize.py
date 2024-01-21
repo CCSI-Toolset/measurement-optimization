@@ -118,13 +118,13 @@ class SensitivityData:
         self.jacobian = list(jacobian_array[:][1:])
 
 
-    def get_Q_list(self, static_measurement_idx, dynamic_measurement_idx):
-        """Combine Q for each measurement to be in one Q.
-        Through _split_jacobian we get a list of lists for Q, 
+    def get_jac_list(self, static_measurement_idx, dynamic_measurement_idx):
+        """Combine Jacobian Q for each measurement to be in one Jacobian Q.
+        Through _split_jacobian we get a list of lists for Jacobian Q, 
         each list contains an Nt*n_parameters elements, which is the sensitivity matrix Q for measurement m
 
         We aim to convert this list of arrays to Q, a numpy array containing Jacobian matrix of the shape N_total_m * Np
-        Q structure: 
+        Jacobian Q structure: 
         [ \partial y1(t1)/ \partial p1, ..., \partial y1(t1)/ \partial pN,
         \partial y1(t2)/ \partial p1, ..., \partial y1(t2)/ \partial pN,
         ..., 
@@ -140,34 +140,34 @@ class SensitivityData:
         
         Returns
         ------- 
-        Q: Jacobian information for main class use, a 2D numpy array
+        jac: Jacobian information for main class use, a 2D numpy array
         """
 
         # get the maximum index from index set 
         # why not sum up static index number and dynamic index number? because they can overlap 
         max_measure_idx = max(max(static_measurement_idx), max(dynamic_measurement_idx))
         # the total rows of Q should be equal or more than the number of maximum index given by the argument 
-        if len(Q)<max_measure_idx*self.Nt:
-            raise ValueError("Inconsistent Jacobian matrix shape. Expecting at least "+str(max_measure_idx*self.Nt)+" rows in Q matrix.")
+        if len(jac)<max_measure_idx*self.Nt:
+            raise ValueError("Inconsistent Jacobian matrix shape. Expecting at least "+str(max_measure_idx*self.Nt)+" rows in Jacobian matrix Q.")
 
-        # initialize Q as a list of lists, after stacking all Jacobians, it is converted to numpy array
+        # initialize Jacobian Q as a list of lists, after stacking all Jacobians, it is converted to numpy array
         # after spliting the overall Jacobian to separate Jacobians for each measurement by self._split_jacobian
         # each separate Jacobians becomes a list of lists
-        # here we stack the Q according to the orders the user provides SCM and DCM index
-        # Q: Jacobian matrix of shape N_measure * Np
-        Q = [] 
+        # here we stack the Jacobian Q according to the orders the user provides SCM and DCM index
+        # jac: Jacobian matrix of shape N_measure * Np
+        jac = [] 
         # if there is static-cost measurements
         if static_measurement_idx is not None:
             # loop over SCM indices
             for i in static_measurement_idx:
-                Q.append(self._split_jacobian(i))
+                jac.append(self._split_jacobian(i))
         # if there is dynamic-cost measurements
         if dynamic_measurement_idx is not None:
             # loop over DCM indices
             for j in dynamic_measurement_idx:
-                Q.append(self._split_jacobian(j))
+                jac.append(self._split_jacobian(j))
 
-        return np.asarray(Q) 
+        return np.asarray(jac) 
 
 
     def _split_jacobian(self, idx):
@@ -192,12 +192,12 @@ class SensitivityData:
 
 
 class MeasurementOptimizer:
-    def __init__(self, Q, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, verbose=True):
+    def __init__(self, jac, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, verbose=True):
         """
         Arguments
         ---------
-        :param Q: a 2D numpy array
-            containing Jacobian matrix. 
+        :param jac: a 2D numpy array
+            containing Jacobian matrix Q. 
             It contains m lists, m is the number of meausrements 
             Each list contains an N_t_m*n_parameters elements, which is the sensitivity matrix Q for measurement m 
         :param measure_info: a pandas DataFrame 
@@ -231,31 +231,31 @@ class MeasurementOptimizer:
         self._parse_measure_info()
         
         # get total measurement number from the shape of Q
-        self.n_total_measurements = len(Q)
+        self.n_total_measurements = len(jac)
 
         # the Jacobian matrix should have the same rows as the number of DCMs + number of SCMs
         if self.n_total_measurements!=self.n_dynamic_measurements+self.n_static_measurements:
-            raise ValueError("Jacobian matrix does not agree to measurement indices, expecting " + str(len(Q)) + " total measurements in Jacobian." )
+            raise ValueError("Jacobian matrix does not agree to measurement indices, expecting " + str(len(jac)) + " total measurements in Jacobian." )
             
 
         # measurements can have different # of timepoints
         # Nt key: measurement index, value: # of timepoints for this measure
         self.Nt = {}
         for i in range(self.n_total_measurements):
-            self.Nt[i] = len(Q[i])
+            self.Nt[i] = len(jac[i])
         # total number of all measurements and all time points
         self.total_num_time = sum(self.Nt.values())
 
-        self.n_parameters = len(Q[0][0])
+        self.n_parameters = len(jac[0][0])
         self.verbose = verbose
         self.measure_name = measure_info['name'].tolist() # measurement name list 
         self.cost_list = self.static_cost_measure_info['static_cost'].tolist() # static measurements list
         # add dynamic-cost measurements list 
         # loop over DCM index list
         for i in self.dynamic_measurement_idx:
-            q_ind = measure_info.iloc[i]['Q_index']
+            jac_ind = measure_info.iloc[i]['Q_index']
             # loop over dynamic-cost measurements time points
-            for _ in range(self.Nt[q_ind]):
+            for _ in range(self.Nt[jac_ind]):
                 self.cost_list.append(measure_info.iloc[i]['dynamic_cost'])
 
         # dynamic-cost measurements install cost
@@ -280,7 +280,7 @@ class MeasurementOptimizer:
             self.each_manual_number = None 
 
         # flattened Q and indexes
-        self._dynamic_flatten(Q)
+        self._dynamic_flatten(jac)
 
         # build and check PSD of Sigma
         # check sigma inputs 
@@ -392,11 +392,11 @@ class MeasurementOptimizer:
             if len(error_cov[0])!=self.total_num_time:
                 raise ValueError("error_cov must have the shape total_num_time*total_num_time. Expect number of columns:"+str(self.total_num_time))
 
-    def _dynamic_flatten(self, Q):
+    def _dynamic_flatten(self, jac):
         """Update dynamic flattened matrix index. 
         Arguments 
         ---------
-        :param Q: Jacobian information for main class use, a 2D array of shape [N_total_meausrements * Np]
+        :param jac: Jacobian information for main class use, a 2D array of shape [N_total_meausrements * Np]
 
         Returns
         -------
@@ -405,16 +405,16 @@ class MeasurementOptimizer:
         """
 
         ### dynamic_flatten: to be decision matrix 
-        Q_dynamic_flatten = []
-        # position index in Q_dynamic_flatten where each measurement starts
+        jac_dynamic_flatten = []
+        # position index in jac_dynamic_flatten where each measurement starts
         self.head_pos_dynamic_flatten = {}
         # all static measurements index after dynamic_flattening
         self.static_idx_dynamic_flatten = []
         self.dynamic_idx_dynamic_flatten = []
 
         ### flatten: flatten all measurement all costs 
-        Q_flatten = []
-        # position index in Q_flatten where each measurement starts
+        jac_flatten = []
+        # position index in jac_flatten where each measurement starts
         self.head_pos_flatten = {}
         # all static measurements index after flatten
         self.static_idx_flatten = []
@@ -433,16 +433,16 @@ class MeasurementOptimizer:
         for i in range(self.n_total_measurements):
             if i in self.static_measurement_idx: # static measurements are not flattened for dynamic flatten
                 # dynamic_flatten
-                Q_dynamic_flatten.append(Q[i])
-                # map position index in Q_dynamic_flatten where each measurement starts
+                jac_dynamic_flatten.append(jac[i])
+                # map position index in jac_dynamic_flatten where each measurement starts
                 self.head_pos_dynamic_flatten[i] = count1 
                 # store all static measurements index after dynamic_flattening
                 self.static_idx_dynamic_flatten.append(count1)
                 self.dynamic_to_flatten[count1] = [] # static measurement's dynamic_flatten index corresponds to a list of flattened index
 
                 # flatten 
-                for t in range(len(Q[i])):
-                    Q_flatten.append(Q[i][t])
+                for t in range(len(jac[i])):
+                    jac_flatten.append(jac[i][t])
                     if t==0:
                         self.head_pos_flatten[i] = count2
                     # all static measurements index after flatten
@@ -455,13 +455,13 @@ class MeasurementOptimizer:
 
             else:
                 # dynamic measurements are flattend for both dynamic_flatten and flatten
-                for t in range(len(Q[i])):
-                    Q_dynamic_flatten.append(Q[i][t])
+                for t in range(len(jac[i])):
+                    jac_dynamic_flatten.append(jac[i][t])
                     if t==0:
                         self.head_pos_dynamic_flatten[i] = count1
                     self.dynamic_idx_dynamic_flatten.append(count1) 
 
-                    Q_flatten.append(Q[i][t])
+                    jac_flatten.append(jac[i][t])
                     if t==0:
                         self.head_pos_flatten[i] = count2
                     self.dynamic_to_flatten[count1] = count2
@@ -470,8 +470,8 @@ class MeasurementOptimizer:
                     count1 += 1 
 
 
-        self.Q_dynamic_flatten = Q_dynamic_flatten 
-        self.Q_flatten = Q_flatten
+        self.jac_dynamic_flatten = jac_dynamic_flatten 
+        self.jac_flatten = jac_flatten
         # dimension after dynamic_flatten
         self.num_measure_dynamic_flatten = len(self.static_idx_dynamic_flatten)+len(self.dynamic_idx_dynamic_flatten)
         # dimension after flatten
@@ -635,23 +635,23 @@ class MeasurementOptimizer:
                 # static*static 
                 if i in self.static_idx_dynamic_flatten and j in self.static_idx_dynamic_flatten:
                     #print("static * static, cov:", self.Sigma_inv[(i,j)])
-                    unit = np.asarray(self.Q_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.Q_dynamic_flatten[j])
+                    unit = np.asarray(self.jac_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.jac_dynamic_flatten[j])
                     
                 # consider both i=SCM, j=DCM scenario and i=DCM, j=SCM scenario
                 # static*dynamic
                 elif i in self.static_idx_dynamic_flatten and j in self.dynamic_idx_dynamic_flatten:
                     #print("static*dynamic, cov:", self.Sigma_inv[(i,j)])
-                    unit = np.asarray(self.Q_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.Q_dynamic_flatten[j]).reshape(1,self.n_parameters)
+                    unit = np.asarray(self.jac_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.jac_dynamic_flatten[j]).reshape(1,self.n_parameters)
 
                 # static*dynamic
                 elif i in self.dynamic_idx_dynamic_flatten and j in self.static_idx_dynamic_flatten:
                     #print("static*dynamic, cov:", self.Sigma_inv[(i,j)])
-                    unit = np.asarray(self.Q_dynamic_flatten[i]).reshape(1, self.n_parameters).T@self.Sigma_inv[(i,j)].T@np.asarray(self.Q_dynamic_flatten[j])
+                    unit = np.asarray(self.jac_dynamic_flatten[i]).reshape(1, self.n_parameters).T@self.Sigma_inv[(i,j)].T@np.asarray(self.jac_dynamic_flatten[j])
 
                 # dynamic*dynamic
                 else:
                     #print("dynamic*dynamic, cov:", self.Sigma_inv[(i,j)])
-                    unit = self.Sigma_inv[(i,j)]*np.asarray(self.Q_dynamic_flatten[i]).reshape(1, self.n_parameters).T@np.asarray(self.Q_dynamic_flatten[j]).reshape(1,self.n_parameters)
+                    unit = self.Sigma_inv[(i,j)]*np.asarray(self.jac_dynamic_flatten[i]).reshape(1, self.n_parameters).T@np.asarray(self.jac_dynamic_flatten[j]).reshape(1,self.n_parameters)
 
                 # store unit FIM following this order
                 self.fim_collection.append(unit.tolist())
@@ -684,28 +684,7 @@ class MeasurementOptimizer:
 
         return measurement_matrix
 
-    def __print_FIM(self, FIM):
-        """
-        Analyze one given FIM, this is a helper function after the optimization. 
-
-        Arguments
-        ---------
-        :param FIM: FIM matrix
-
-        Returns
-        -------
-        None
-        """
-
-        det = np.linalg.det(FIM) # D-optimality
-        trace = np.trace(FIM) # A-optimality 
-        eig = np.linalg.eigvals(FIM)
-        print('======FIM result======')
-        print('FIM:', FIM)
-        print('Determinant:', det, '; log_e(det):', np.log(det),  '; log_10(det):', np.log10(det))
-        print('Trace:', trace, '; log_e(trace):', np.log(trace), '; log_10(trace):', np.log10(trace))
-        print('Min eig:', min(eig), '; log_e(min_eig):', np.log(min(eig)), '; log_10(min_eig):', np.log10(min(eig)))
-        print('Cond:', max(eig)/min(eig))
+    
 
     def continuous_optimization(self, mixed_integer=False, obj=ObjectiveLib.A, 
                                 mix_obj = False, alpha=1, fixed_nlp=False,
@@ -719,7 +698,7 @@ class MeasurementOptimizer:
                                 time_interval_all_dynamic=False, 
                                 total_manual_num_init=10, 
                                 cost_initial = 100, 
-                               FIM_diagonal_small_element=0, 
+                               fim_diagonal_small_element=0, 
                                print_level = 0):
         
         """Continuous optimization problem formulation. 
@@ -762,7 +741,7 @@ class MeasurementOptimizer:
             initialize the total number of dynamical timepoints selected 
         :param cost initial: float
             initialize the cost 
-        :param FIM_diagonal_small_element: float
+        :param fim_diagonal_small_element: float
             a small number, default to be 0, to be added to FIM diagonal elements for better convergence
         :param print_level: integer
             0 (default): no process information 
@@ -785,7 +764,7 @@ class MeasurementOptimizer:
         m.cost_list = self.cost_list
         m.dynamic_install_cost = self.dynamic_install_cost
         # FIM set 
-        m.DimFIM = pyo.Set(initialize=range(self.n_parameters))
+        m.dim_fim = pyo.Set(initialize=range(self.n_parameters))
 
         self.print_level = print_level
         
@@ -796,9 +775,9 @@ class MeasurementOptimizer:
         self.dynamic_Nt = self.Nt[self.n_static_measurements]
         # dynamic measurement index number 
         # Pyomo model explicitly numbers all of the static measurements first and then all of the dynmaic measurements
-        m.DimDynamic = pyo.Set(initialize=range(self.n_static_measurements, self.n_total_measurements))
+        m.dim_dynamic = pyo.Set(initialize=range(self.n_static_measurements, self.n_total_measurements))
         # turn dynamic measurement number of timepoints into a pyomo set 
-        m.DimDynamic_t = pyo.Set(initialize=range(self.dynamic_Nt)) 
+        m.dim_dynamic_t = pyo.Set(initialize=range(self.dynamic_Nt)) 
         
         # pair time index and real time 
         # for e.g., time 2h is the index 16, dynamic[16] = 2
@@ -830,30 +809,27 @@ class MeasurementOptimizer:
             return ((a,b) for a in m.n_responses for b in range(a, self.num_measure_dynamic_flatten))
         
         # only define the upper triangle of FIM 
-        def DimFIMhalf_init(m):
-            return ((a,b) for a in m.DimFIM for b in range(a, self.n_parameters))
+        def dim_fim_half_init(m):
+            return ((a,b) for a in m.dim_fim for b in range(a, self.n_parameters))
         
         # set for measurement y matrix
         m.responses_upper_diagonal = pyo.Set(dimen=2, initialize=n_responses_half_init)
         # set for FIM 
-        m.DimFIM_half = pyo.Set(dimen=2, initialize=DimFIMhalf_init)
+        m.dim_fim_half = pyo.Set(dimen=2, initialize=dim_fim_half_init)
         
         # if decision variables y are binary
         if mixed_integer:
-            # if only defining upper triangle of the y matrix
-            if upper_diagonal_only:
-                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, within=pyo.Binary)
-            # else, define all elements in the y symmetry matrix
-            else:
-                m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, within=pyo.Binary)
+            y_domain = pyo.Binary 
         # if decision variables y are relaxed
         else:
-            # if only defining upper triangle of the y matrix
-            if upper_diagonal_only:
-                m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
-            # else, define all elements in the y symmetry matrix
-            else:
-                m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, bounds=(0,1), within=pyo.NonNegativeReals)
+            y_domain = pyo.NonNegativeReals
+
+        # if only defining upper triangle of the y matrix
+        if upper_diagonal_only:
+            m.cov_y = pyo.Var(m.responses_upper_diagonal, initialize=initialize, bounds=(0,1), within=y_domain)
+        # else, define all elements in the y symmetry matrix
+        else:
+            m.cov_y = pyo.Var(m.n_responses, m.n_responses, initialize=initialize, bounds=(0,1), within=y_domain)
         
         # use a fix option to compute results for square problems with given y 
         if fix or fixed_nlp:
@@ -871,17 +847,17 @@ class MeasurementOptimizer:
                     fim_initial_dict[str_name] = initial_fim[i,j] 
         
         if upper_diagonal_only:
-            m.TotalFIM = pyo.Var(m.DimFIM_half, initialize=init_fim)
+            m.total_fim = pyo.Var(m.dim_fim_half, initialize=init_fim)
         else:
-            m.TotalFIM = pyo.Var(m.DimFIM, m.DimFIM, initialize=init_fim)
+            m.total_fim = pyo.Var(m.dim_fim, m.dim_fim, initialize=init_fim)
 
         ### compute FIM 
         def eval_fim(m, a, b):
             """
-            Evaluate fim 
+            Evaluate FIM
             FIM = sum(cov_y[i,j]*unit FIM[i,j]) for all i, j in n_responses
 
-            a, b: dimensions for FIM, iterate in parameter set 
+            a, b: indices for FIM, iterate in parameter set 
             """
             if a <= b: 
                 summi = 0 
@@ -895,13 +871,13 @@ class MeasurementOptimizer:
 
                 # if diagonal elements, a small element can be added to avoid rank deficiency
                 if a==b:
-                    return m.TotalFIM[a,b] == summi + FIM_diagonal_small_element
+                    return m.total_fim[a,b] == summi + fim_diagonal_small_element
                 # if not diagonal, no need to add small number 
                 else:
-                    return m.TotalFIM[a,b] == summi
+                    return m.total_fim[a,b] == summi
             # FIM is symmetric so no need to compute again
             else:
-                return m.TotalFIM[a,b] == m.TotalFIM[b,a]
+                return m.total_fim[a,b] == m.total_fim[b,a]
             
         def integer_cut_0(m):
             """Compute the total number of measurements and time points selected
@@ -958,7 +934,7 @@ class MeasurementOptimizer:
         def symmetry(m,a,b):
             """
             Ensure the symmetry of y matrix.
-            This is only used when all elements of y are defined, do not need to be used when defining only upper triangle of y
+            This is only modeled if we model the whole FIM, instead of defining only upper triangle of y
             """
             if a<b:
                 return m.cov_y[a,b] == m.cov_y[b,a]
@@ -972,7 +948,7 @@ class MeasurementOptimizer:
             cost = static-cost measurement cost + dynamic-cost measurement installation cost + dynamic-cost meausrement timepoint cost 
             """
             static_and_dynamic_cost = sum(m.cov_y[i,i]*self.cost_list[i] for i in m.n_responses)
-            dynamic_fixed_cost = sum(m.if_install_dynamic[j]*self.dynamic_install_cost[j-self.n_static_measurements] for j in m.DimDynamic)
+            dynamic_fixed_cost = sum(m.if_install_dynamic[j]*self.dynamic_install_cost[j-self.n_static_measurements] for j in m.dim_dynamic)
             return m.cost == static_and_dynamic_cost + dynamic_fixed_cost
         
         def cost_limit(m):
@@ -1008,14 +984,18 @@ class MeasurementOptimizer:
             """compute trace 
             trace = sum(diag(M))
             """
-            sum_x = sum(m.TotalFIM[j,j] for j in m.DimFIM)
+            sum_x = sum(m.total_fim[j,j] for j in m.dim_fim)
             return sum_x
 
         # add constraints depending on if the FIM is defined as half triangle or all 
         if upper_diagonal_only:
-            m.total_fim_constraint = pyo.Constraint(m.DimFIM_half, rule=eval_fim)
+            m.total_fim_constraint = pyo.Constraint(m.dim_fim_half, rule=eval_fim)
         else:
-            m.total_fim_constraint = pyo.Constraint(m.DimFIM, m.DimFIM, rule=eval_fim)
+            m.total_fim_constraint = pyo.Constraint(m.dim_fim, m.dim_fim, rule=eval_fim)
+            # only when the mixed-integer problem y are defined not only upper triangle 
+            # this can help the performance of MIP problems so we keep it although not use it now
+            if mixed_integer:
+                m.sym = pyo.Constraint(m.n_responses, m.n_responses, rule=symmetry)
         
         # if given fixed solution, no need to add the following constraints
         if not fix: 
@@ -1023,7 +1003,7 @@ class MeasurementOptimizer:
             m.total_number_dynamic_measurements = pyo.Var(initialize=total_manual_num_init)
             # compute total dynamic timepoints number
             m.manual = pyo.Constraint(rule=total_dynamic)
-            # total dynamic timepoints < total manual number 
+            # total dynamic timepoints < total manual number  
             m.con_manual = pyo.Constraint(rule=total_dynamic_con)
 
             ## integer cuts 
@@ -1033,12 +1013,7 @@ class MeasurementOptimizer:
             m.integer_cut0 = pyo.Constraint(rule=integer_cut_0)
             # let total number of measurements selected > 0, so we cut the all 0 solution
             m.integer_cut0_in = pyo.Constraint(rule=integer_cut_0_ineq)
-            
-            # only when the mixed-integer problem y are defined not only upper triangle 
-            # this can help the performance of MIP problems so we keep it although not use it now
-            if mixed_integer and not upper_diagonal_only:
-                m.sym = pyo.Constraint(m.n_responses, m.n_responses, rule=symmetry)
-            
+
             # relaxation constraints for y[a,b] = y[a]*y[b]
             m.cov1 = pyo.Constraint(m.n_responses, m.n_responses, rule=y_covy1)
             m.cov2 = pyo.Constraint(m.n_responses, m.n_responses, rule=y_covy2)
@@ -1055,17 +1030,17 @@ class MeasurementOptimizer:
             
             # we choose that if this is a mixed-integer problem, the dynamic installation flag is in {0,1}
             if mixed_integer:
-                m.if_install_dynamic = pyo.Var(m.DimDynamic, initialize=dynamic_install_init, bounds=(0,1), within=pyo.Binary)
-            # if it is a NLP problem, this flag is relaxed
+                var_domain = pyo.Binary 
             else:
-                m.if_install_dynamic = pyo.Var(m.DimDynamic, initialize=dynamic_install_init, bounds=(0,1))
+                var_domain = pyo.NonNegativeReals
+            m.if_install_dynamic = pyo.Var(m.dim_dynamic, initialize=dynamic_install_init, bounds=(0,1), within=var_domain)
                 
             # for solving fixed problem, we fix the dynamic installation flag
             if self.fixed_nlp:
                 m.if_install_dynamic.fix()
                     
-            m.dynamic_cost = pyo.Constraint(m.DimDynamic, m.DimDynamic_t, rule=dynamic_fix_yd)
-            m.dynamic_con2 = pyo.Constraint(m.DimDynamic, rule=dynamic_fix_yd_con2)
+            m.dynamic_cost = pyo.Constraint(m.dim_dynamic, m.dim_dynamic_t, rule=dynamic_fix_yd)
+            m.dynamic_con2 = pyo.Constraint(m.dim_dynamic, rule=dynamic_fix_yd_con2)
 
             # if each manual number smaller than a given limit
             if self.each_manual_number is not None:
@@ -1104,7 +1079,7 @@ class MeasurementOptimizer:
                             count = 0 
                             # get the timepoints in this interval
                             while (count+t<self.dynamic_Nt) and (dynamic_time[count+t]-dynamic_time[t])<self.min_time_interval[0]:
-                                for i in m.DimDynamic:
+                                for i in m.dim_dynamic:
                                     surro_idx = self.n_static_measurements + (i-self.n_static_measurements)*self.dynamic_Nt + t + count
                                     sumi += m.cov_y[surro_idx, surro_idx]
                                 count += 1 
@@ -1115,7 +1090,7 @@ class MeasurementOptimizer:
                         m.add_component(con_name, pyo.Constraint(expr=discretizer))
                 # if this constraint applies to each dynamic measurements, in a local way
                 else:
-                    for i in m.DimDynamicf:
+                    for i in m.dim_dynamic:
                         for t in range(self.dynamic_Nt):
                             # end time is an open end of the region, so another constraint needs to be added to include end_time
                             #if dynamic_time[t]+discretize_time <= end_time+0.1*discretize_time:       
@@ -1165,7 +1140,7 @@ class MeasurementOptimizer:
                     def eq_fim(m):
                         """Make FIM in this model equal to the FIM computed by grey-box. Necessary. 
                         """
-                        return m.TotalFIM[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
+                        return m.total_fim[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
                     
                     con_name = "con"+str(i)+str(j)
                     m.add_component(con_name, pyo.Constraint(expr=eq_fim))
@@ -1209,12 +1184,12 @@ class MeasurementOptimizer:
         m.egb = ExternalGreyBoxBlock()
         m.egb.set_external_model(ex_model)
 
-    def compute_FIM(self, measurement_vector):
+    def compute_fim(self, measurement_vector):
         """
         Compute a total FIM given a set of measurement choice solutions 
         This is a helper function to verify solutions; It is not involved in the optimization part. 
         Each unit FIM is computed as: 
-        FIM = Q1.T@y@Sigma_inv@Q2 
+        FIM = Q1.T@y@Sigma_inv@Q2, Q is Jacobian
 
         Arguments
         ---------
@@ -1230,29 +1205,29 @@ class MeasurementOptimizer:
         measurement_matrix = self.__measure_matrix(measurement_vector)
 
         # compute FIM as Np*Np
-        FIM = np.zeros((self.no_param, self.no_param))
+        fim = np.zeros((self.no_param, self.no_param))
 
         # go over all measurement index
         for m1_rank in range(self.total_no_measure):
             # get the corresponding gradient vector for this measurement 
             # use np.matrix to keep the dimensions for the vector, otherwise numpy makes the vector 1D instead of Np*1
-            Q_m1 = np.matrix(self.Q[m1_rank])
+            jac_m1 = np.matrix(self.jac[m1_rank])
             # go over all measurement index
             for m2_rank in range(self.total_no_measure):
                 # get the corresponding gradient vector for this measurement 
-                Q_m2 = np.matrix(self.Q[m2_rank])
+                jac_m2 = np.matrix(self.jac[m2_rank])
                 # solution of if these two measurements are selected
                 measure_matrix = np.matrix([measurement_matrix[m1_rank,m2_rank]])
                 # retrieve the error covariance matrix corresponding part
                 sigma = np.matrix([self.Sigma_inv[m1_rank,m2_rank]])
                 # compute FIM as Q.T@y@error_cov@Q
-                FIM_unit = Q_m1.T@measure_matrix@sigma@Q_m2
-                FIM += FIM_unit
+                fim_unit = jac_m1.T@measure_matrix@sigma@jac_m2
+                fim += fim_unit
         # FIM read
         if self.verbose:
-            self.__print_FIM(FIM)
+            print_fim(fim)
 
-        return FIM
+        return fim
     
     def solve(self, mod, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False):
         """
@@ -1286,8 +1261,6 @@ class MeasurementOptimizer:
                 solver.config.options[k] = v
             solver.solve(mod, tee=True)
             
-            if degeneracy_hunter:
-                dh = DegeneracyHunter(mod, solver=solver)
         
         elif not mip_option and objective==ObjectiveLib.A:
             #solver = pyo.SolverFactory('ipopt')
@@ -1316,9 +1289,6 @@ class MeasurementOptimizer:
             for k,v in additional_options.items():
                 solver.config.options[k] = v
             solver.solve(mod, tee=True)
-            
-            if degeneracy_hunter:
-                dh = DegeneracyHunter(mod, solver=solver)
 
         elif mip_option and objective==ObjectiveLib.D:
             
@@ -1360,11 +1330,8 @@ class MeasurementOptimizer:
                     }
                 },
             )
-            
-        if degeneracy_hunter:
-            return mod, dh
-        else:
-            return mod
+
+        return mod
 
     def continuous_optimization_cvxpy(self, objective='D', budget=100, solver=None):
         """
@@ -1512,7 +1479,28 @@ class MeasurementOptimizer:
 
 
 
-                
+def print_fim(fim):
+    """
+    Analyze one given FIM, this is a helper function after the optimization. 
+
+    Arguments
+    ---------
+    :param FIM: FIM matrix
+
+    Returns
+    -------
+    None
+    """
+
+    det = np.linalg.det(fim) # D-optimality
+    trace = np.trace(fim) # A-optimality 
+    eig = np.linalg.eigvals(fim)
+    print('======FIM result======')
+    print('FIM:', fim)
+    print('Determinant:', det, '; log_e(det):', np.log(det),  '; log_10(det):', np.log10(det))
+    print('Trace:', trace, '; log_e(trace):', np.log(trace), '; log_10(trace):', np.log10(trace))
+    print('Min eig:', min(eig), '; log_e(min_eig):', np.log(min(eig)), '; log_10(min_eig):', np.log10(min(eig)))
+    print('Cond:', max(eig)/min(eig))
 
 
 
