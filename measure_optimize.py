@@ -141,7 +141,7 @@ class SensitivityData:
         
         Returns
         ------- 
-        jac: Jacobian information for main class use, a 2D numpy array
+        self.jac: Jacobian information for main class use, a 2D numpy array
         """
 
         # get the maximum index from index set 
@@ -168,7 +168,7 @@ class SensitivityData:
             for j in dynamic_measurement_idx:
                 jac.append(self._split_jacobian(j))
 
-        return np.asarray(jac) 
+        self.jac = jac
 
 
     def _split_jacobian(self, idx):
@@ -234,11 +234,14 @@ class MeasurementOptimizer:
         """
         Arguments
         ---------
-        :param jac: a 2D numpy array
-            containing Jacobian matrix Q. 
-            It contains m lists, m is the number of meausrements 
+        :param jac: the SensitivityData object
+            containing Jacobian matrix jac and the number of timepoints Nt
+            jac contains m lists, m is the number of meausrements 
             Each list contains an N_t_m*n_parameters elements, which is the sensitivity matrix Q for measurement m 
-        
+        :param measure_info: the MeasurementData object
+            containing the string names of measurements, indices of measurements in the Jacobian matrix,
+            the static costs and dynamic costs of the measurements, 
+            minimal interval time between two sample points, and the maximum number of samples.
         :param error_cov: a numpy array
             defined error covariance matrix here
             if CovarianceStructure.identity: error covariance matrix is an identity matrix
@@ -261,8 +264,6 @@ class MeasurementOptimizer:
         None 
         """
         self.measure_info = measure_info
-        # check measure_info has all columns needed
-        self._check_measure_info()  
         # parse measure_info information 
         self._parse_measure_info()
         
@@ -276,47 +277,14 @@ class MeasurementOptimizer:
 
         # measurements can have different # of timepoints
         # Nt key: measurement index, value: # of timepoints for this measure
-        self.Nt = {}
-        for i in range(self.n_total_measurements):
-            self.Nt[i] = len(jac[i])
+        self.Nt = jac.Nt
         # total number of all measurements and all time points
         self.total_num_time = sum(self.Nt.values())
-
-        self.n_parameters = len(jac[0][0])
+        self.n_parameters = len(jac.jac[0][0]) 
         self.verbose = verbose
-        self.measure_name = measure_info['name'].tolist() # measurement name list 
-        self.cost_list = self.static_cost_measure_info['static_cost'].tolist() # static measurements list
-        # add dynamic-cost measurements list 
-        # loop over DCM index list
-        for i in self.dynamic_measurement_idx:
-            jac_ind = measure_info.iloc[i]['Q_index']
-            # loop over dynamic-cost measurements time points
-            for _ in range(self.Nt[jac_ind]):
-                self.cost_list.append(measure_info.iloc[i]['dynamic_cost'])
-
-        # dynamic-cost measurements install cost
-        self.dynamic_install_cost = self.dynamic_cost_measure_info['static_cost'].tolist()
-
-        # min time interval, only for dynamic-cost measurements
-        min_time_interval = measure_info['min_time_interval'].tolist()
-        # if a minimal time interval is set up 
-        if np.asarray(min_time_interval).any():
-            self.min_time_interval = min_time_interval
-        else:
-            # this option can also be None, means there are no time interval limitation
-            self.min_time_interval = None
-
-        # each manual number, for one measurement, how many time points can be chosen at most 
-        each_manual_number = measure_info['max_manual_number'].tolist()
-        # if there is a value, this is how many time points can be chosen for it. 
-        if np.asarray(each_manual_number).any():
-            self.each_manual_number = each_manual_number
-        # if this is a null list, there is no limitation for how many time points can be chosen for it. 
-        else:
-            self.each_manual_number = None 
 
         # flattened Q and indexes
-        self._dynamic_flatten(jac)
+        self._dynamic_flatten(jac.jac)
 
         # build and check PSD of Sigma
         # check sigma inputs 
@@ -332,12 +300,25 @@ class MeasurementOptimizer:
         """
         This function decodes information from measure_info dataframe.
         """
-        # # of static and dynamic measurements
-        static_measurement_idx = self.measure_info[self.measure_info['dynamic_cost']==0].index.values.tolist()
-        dynamic_measurement_idx = self.measure_info[self.measure_info['dynamic_cost']!=0].index.values.tolist()
-        # store static and dynamic measurements dataframe 
-        self.dynamic_cost_measure_info = self.measure_info[self.measure_info['dynamic_cost']!=0]
-        self.static_cost_measure_info = self.measure_info[self.measure_info['dynamic_cost']==0]
+        # indices of static and dynamic measurements, stored in lists
+        static_measurement_idx, dynamic_measurement_idx = [], [] 
+        # dynamic_cost_measure_info stores the static costs of dynamic-cost measurements
+        # static_cost_measure_info stores the static costs of static-cost measurements
+        dynamic_cost_measure_info, static_cost_measure_info = [] 
+        # loop over the number of measurements
+        for i in range(len(self.measure_info.dynamic_cost)):
+            # if there is no dynamic costs, this is a static-cost measurement 
+            if self.measure_info.dynamic_cost[i] == 0:
+                # add to static-cost measurment indices list
+                static_measurement_idx.append(i)
+                # add its static cost to the static-cost measurements' cost list
+                static_cost_measure_info.append(self.measure_info.static_cost[i])
+            # if there are dynamic costs, this is a dynamic-cost measurement
+            else:
+                # add to dynamic-cost measurement indices list
+                dynamic_measurement_idx.append(i)
+                # add its static cost to the dynamic-cost measurements' cost list
+                dynamic_cost_measure_info.append(self.measure_info.static_cost[i]) 
 
         # number of SCMs
         self.n_static_measurements = len(static_measurement_idx)
@@ -347,7 +328,28 @@ class MeasurementOptimizer:
         self.n_dynamic_measurements = len(dynamic_measurement_idx)
         # DCM indices
         self.dynamic_measurement_idx = dynamic_measurement_idx
+        # static-cost measurements' cost list
+        self.cost_list = static_cost_measure_info
+        # dynamic-cost measurements' cost list
+        self.dynamic_cost_measure_info = dynamic_cost_measure_info
 
+        # parse measurement names
+        self.measure_name = self.measure_info.name # measurement name list 
+        
+        # add dynamic-cost measurements list 
+        # loop over DCM index list
+        for i in self.dynamic_measurement_idx:
+            # loop over dynamic-cost measurements time points
+            for _ in range(self.Nt):
+                self.cost_list.append(self.measure_info.dynamic_cost[i])
+
+        # min time interval, only for dynamic-cost measurements
+        # if there is no min time interval, it is 0
+        self.min_time_interval = self.measure_info.min_time_interval
+
+        # each manual number, for one measurement, how many time points can be chosen at most 
+        # if this number is >= Nt, then there is no limitation to how many of them can be chosen, we use Nt for this number
+        self.each_manual_number = max(self.measure_info.max_manual_number, self.Nt)
         
     def _check_sigma(self, error_cov, error_option):
         """ Check sigma inputs shape and values
