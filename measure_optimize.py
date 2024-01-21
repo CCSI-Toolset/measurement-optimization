@@ -8,6 +8,7 @@ import pyomo.environ as pyo
 from greybox_generalize import LogDetModel
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel, ExternalGreyBoxBlock
 from enum import Enum
+from dataclasses import dataclass
 
 class CovarianceStructure(Enum): 
     """Covariance definition 
@@ -189,7 +190,24 @@ class SensitivityData:
         jacobian_idx = self.jacobian[idx*self.Nt:(idx+1)*self.Nt][:]
         return jacobian_idx 
     
-
+@dataclass
+class MeasurementData:
+    """
+    containing measurement related information.
+    :param name: a list of strings, the measurement names 
+    :param jac_index: a list of int, the indices of measurements in the Jacobian matrix
+    :param static_cost: a list of float, the static cost of measurements 
+    :param dynamic_cost: a list of float, the dynamic cost of measurements  
+    :param min_time_interval: float, the minimal time interval between two sampled time points 
+    :param max_num_sample: int, the maximum number of samples for each measurement
+    """
+    name: list
+    jac_index: list
+    static_cost: list
+    dynamic_cost: list
+    min_time_interval: float
+    max_num_sample: int 
+    
 
 class MeasurementOptimizer:
     def __init__(self, jac, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, verbose=True):
@@ -200,9 +218,7 @@ class MeasurementOptimizer:
             containing Jacobian matrix Q. 
             It contains m lists, m is the number of meausrements 
             Each list contains an N_t_m*n_parameters elements, which is the sensitivity matrix Q for measurement m 
-        :param measure_info: a pandas DataFrame 
-            containing measurement information.
-            columns: ['name', 'Q_index', 'dynamic_cost', 'static_cost', 'min_time_interval', 'max_manual_number']
+        
         :param error_cov: a numpy array
             defined error covariance matrix here
             if CovarianceStructure.identity: error covariance matrix is an identity matrix
