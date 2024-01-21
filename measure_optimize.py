@@ -8,7 +8,6 @@ import pyomo.environ as pyo
 from greybox_generalize import LogDetModel
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel, ExternalGreyBoxBlock
 from enum import Enum
-#from idaes.core.util.model_diagnostics import DegeneracyHunter
 
 class CovarianceStructure(Enum): 
     """Covariance definition 
@@ -48,23 +47,25 @@ class ObjectiveLib(Enum):
         return value in cls._value2member_map_
 
 
-class DataProcess:
-    """Data processing class. Only process a certain format of CSV file."""
-    def __init__(self) -> None:
-        return 
-    
-    def read_jacobian(self, filename):
-        """Read jacobian from csv file 
+class SensitivityData:
+    """"""
+    def __init__(self, filename, Nt) -> None:
+        """
+        Read, convert the format, and sotre the sensitivity information (Jacobian). 
+        Only process a certain format of CSV file.
+        Assume every measurement has the same number of time points: Nt
 
         Arguments
         ---------
         :param filename: a string of the csv file name
+        :param Nt: number of timepoints is needed to split Q for each measurement. 
+            Assume all measurements have the same number of time points of Nt.
 
         This csv file should have the following format:
         columns: parameters to be estimated 
         (An extra first column is added for index)
         rows: measurement timepoints
-        data: jacobian values
+        data: Jacobian values
 
         The csv file example: 
 
@@ -81,27 +82,48 @@ class DataProcess:
         ------
         None
         """
-        jacobian_info = pd.read_csv(filename, index_col=False)
-        # it needs to be converted to numpy array or it gives error
-        jacobian_list = np.asarray(jacobian_info) 
+        # store the number of time points for each measurement 
+        self.Nt = Nt
+        # read Jacobian from .csv file 
+        self._read_from_csv(filename)
 
-        # jacobian_list (N*Np matrix) is converted to a list of lists (each list is a [Np*1] vector)
+        return 
+    
+    def _read_from_csv(self, filename):
+        """Read Jacobian from csv file 
+
+        Arguments
+        ---------
+        :param filename: a string of the csv file name
+            This csv file structure is explained in the class doc string. 
+
+        Returns
+        ------
+        None
+        """
+        jacobian_info = pd.read_csv(filename, index_col=False)
+        # convert Jacobian matrix from Pandas DataFrame to numpy array
+        jacobian_array = np.asarray(jacobian_info) 
+
+        # check if the number of rows in this array is a multiple of Nt 
+        if len(jacobian_array)%self.Nt != 0:
+            raise ValueError("The number of rows in this Jacobian matrix is not a multiple of Nt.")
+
+        # Jacobian_array (N*Np matrix) is converted to a list of lists (each list is a [Np*1] vector)
         # to separate different measurements
         # because FIM requires different gradient [Np*1] vectors multiply together
-        jacobian = []
         # first columns are parameter names in string, so to be removed
-        for i in range(len(jacobian_list)):
-            # jacobian remove first column which is column index. see doc string for example input
-            jacobian.append(list(jacobian_list[i][1:]))
+        # Jacobian remove first column which is column index. see doc string for example input
+        # return all rows and all columns except the first one
+        self.jacobian = list(jacobian_array[:][1:])
 
-        self.jacobian = jacobian
 
-    def get_Q_list(self, static_measurement_idx, dynamic_measurement_idx, Nt):
+    def get_Q_list(self, static_measurement_idx, dynamic_measurement_idx):
         """Combine Q for each measurement to be in one Q.
         Through _split_jacobian we get a list of lists for Q, 
         each list contains an Nt*n_parameters elements, which is the sensitivity matrix Q for measurement m
 
-        We aim to convert this list of lists to Q, a numpy array containing jacobian matrix of the shape N_total_m * Np
+        We aim to convert this list of arrays to Q, a numpy array containing Jacobian matrix of the shape N_total_m * Np
         Q structure: 
         [ \partial y1(t1)/ \partial p1, ..., \partial y1(t1)/ \partial pN,
         \partial y1(t2)/ \partial p1, ..., \partial y1(t2)/ \partial pN,
@@ -115,14 +137,11 @@ class DataProcess:
         ---------
         :param static_measurement_idx: list of the index for static measurements 
         :param dynamic_measurement_idx: list of the index for dynamic measurements
-        :param Nt: number of timepoints is needed to split Q for each measurement 
-
+        
         Returns
         ------- 
-        Q: jacobian information for main class use, a 2D numpy array
+        Q: Jacobian information for main class use, a 2D numpy array
         """
-        # number of timepoints for each measurement 
-        self.Nt = Nt
 
         # get the maximum index from index set 
         # why not sum up static index number and dynamic index number? because they can overlap 
@@ -131,11 +150,11 @@ class DataProcess:
         if len(Q)<max_measure_idx*self.Nt:
             raise ValueError("Inconsistent Jacobian matrix shape. Expecting at least "+str(max_measure_idx*self.Nt)+" rows in Q matrix.")
 
-        # initialize Q as a list of lists, after stacking all jacobians, it is converted to numpy array
+        # initialize Q as a list of lists, after stacking all Jacobians, it is converted to numpy array
         # after spliting the overall Jacobian to separate Jacobians for each measurement by self._split_jacobian
         # each separate Jacobians becomes a list of lists
         # here we stack the Q according to the orders the user provides SCM and DCM index
-        # Q: jacobian matrix of shape N_measure * Np
+        # Q: Jacobian matrix of shape N_measure * Np
         Q = [] 
         # if there is static-cost measurements
         if static_measurement_idx is not None:
@@ -152,7 +171,7 @@ class DataProcess:
 
 
     def _split_jacobian(self, idx):
-        """Split jacobian according to measurements
+        """Split Jacobian according to measurements
         It splits the overall stacked Q matrix to 
         Q for measurement 1, Q for measurement 2, ..., Q for measurement N 
 
@@ -163,8 +182,8 @@ class DataProcess:
         Returns
         -------
         jacobian_idx: a Nt*Np matrix, Nt is the number of timepoints for the measurement. 
-            jacobian information for one measurement 
-            they are slicing indices for jacobian matrix
+            Jacobian information for one measurement 
+            they are slicing indices for Jacobian matrix
         """
         # get a Nt*Np matrix, Nt is the number of timepoint for the measurement 
         jacobian_idx = self.jacobian[idx*self.Nt:(idx+1)*self.Nt][:]
@@ -178,7 +197,7 @@ class MeasurementOptimizer:
         Arguments
         ---------
         :param Q: a 2D numpy array
-            containing jacobian matrix. 
+            containing Jacobian matrix. 
             It contains m lists, m is the number of meausrements 
             Each list contains an N_t_m*n_parameters elements, which is the sensitivity matrix Q for measurement m 
         :param measure_info: a pandas DataFrame 
@@ -377,7 +396,7 @@ class MeasurementOptimizer:
         """Update dynamic flattened matrix index. 
         Arguments 
         ---------
-        :param Q: jacobian information for main class use, a 2D array of shape [N_total_meausrements * Np]
+        :param Q: Jacobian information for main class use, a 2D array of shape [N_total_meausrements * Np]
 
         Returns
         -------
