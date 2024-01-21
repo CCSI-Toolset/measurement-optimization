@@ -230,7 +230,7 @@ class MeasurementData:
             raise ValueError("Wrong types")
 
 class MeasurementOptimizer:
-    def __init__(self, jac, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, verbose=True):
+    def __init__(self, jac, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, print_level=0):
         """
         Arguments
         ---------
@@ -257,32 +257,37 @@ class MeasurementOptimizer:
                 Shape: sum(Nt) * sum(Nt) 
         :param: error_opt: CovarianceStructure
             can choose from identity, variance, time_correlation, measure_correlation, time_measure_correlation. See above comments.
-        :param verbose: if print debug sentences
+        :param print_level: int
+            indicate what statements are printed for debugging at the pre-computation stage 
+            0 (default): no extra printing 
+            1: print to show it is working 
+            2: print for debugging 
+            3: print everything that could help with debugging 
+
 
         Returns
         -------
         None 
         """
-        self.measure_info = measure_info
-        # parse measure_info information 
-        self._parse_measure_info()
-        
+        # print_level received here is for the pre-computation stage 
+        self.precompute_print = print_level
+
+        ## parse sensitivity info from SensitivityData
         # get total measurement number from the shape of Q
-        self.n_total_measurements = len(jac)
-
-        # the Jacobian matrix should have the same rows as the number of DCMs + number of SCMs
-        if self.n_total_measurements!=self.n_dynamic_measurements+self.n_static_measurements:
-            raise ValueError("Jacobian matrix does not agree to measurement indices, expecting " + str(len(jac)) + " total measurements in Jacobian." )
-            
-
+        self.n_total_measurements = len(jac.jac)
         # measurements can have different # of timepoints
         # Nt key: measurement index, value: # of timepoints for this measure
         self.Nt = jac.Nt
-        # total number of all measurements and all time points
-        self.total_num_time = sum(self.Nt.values())
         self.n_parameters = len(jac.jac[0][0]) 
-        self.verbose = verbose
 
+        ## parse measurement info from MeasurementData
+        self.measure_info = measure_info
+        # parse measure_info information 
+        self._parse_measure_info()
+
+        # check if SensitivityData and MeasurementData provide consistent inputs 
+        self._check_consistent_sens_measure()
+    
         # flattened Q and indexes
         self._dynamic_flatten(jac.jac)
 
@@ -343,6 +348,9 @@ class MeasurementOptimizer:
             for _ in range(self.Nt):
                 self.cost_list.append(self.measure_info.dynamic_cost[i])
 
+        # total number of all measurements and all time points
+        self.total_num_time = self.Nt*(self.n_static_measurements+self.n_dynamic_measurements)
+
         # min time interval, only for dynamic-cost measurements
         # if there is no min time interval, it is 0
         self.min_time_interval = self.measure_info.min_time_interval
@@ -350,6 +358,14 @@ class MeasurementOptimizer:
         # each manual number, for one measurement, how many time points can be chosen at most 
         # if this number is >= Nt, then there is no limitation to how many of them can be chosen, we use Nt for this number
         self.each_manual_number = max(self.measure_info.max_manual_number, self.Nt)
+
+    def _check_consistent_sens_measure(self):
+        """This function checks if SensitivityData and MeasurementData provide consistent inputs
+        """
+        # check if the index list of MeasurementData is in the range of SensitivityData
+        if (max(self.measure_info.jac_index)+1)*self.Nt > self.n_total_measurements:
+            raise ValueError("The measurement index is out of the range of the given Jacobian matrix")
+
         
     def _check_sigma(self, error_cov, error_option):
         """ Check sigma inputs shape and values
