@@ -1420,6 +1420,152 @@ class MeasurementOptimizer:
             )
 
         return mod
+    
+    def customized_warmstart(self, mod):
+        """
+        This is the warmstart function provided to MindtPy 
+        It is called every mindtpy iteration, after solving MILP master problem, before solving the fixed NLP problem 
+        This function initializes all continuous variables in the model given the integer decision values
+
+        Arguments
+        ---------
+        mod: pyomo model returned by the solver from the last MILP master solve. It has all integer decision values 
+
+        Return 
+        -----
+        None. Initialize all continuous variables of this model in-place. 
+        """
+        # new_fim is the FIM computed with the given integer solution
+        # initialize new_fim
+        new_fim = np.zeros((self.n_parameters,self.n_parameters))
+
+        if self.optimize_print_level >= 3:
+            # print to see how many non-zero solutions are in the solution
+            for a in mod.n_responses:
+                for b in mod.n_responses:
+                    if b>=a:
+                        # all solutions that are bigger than 0.001 are treated as non-zero
+                        if mod.cov_y[a,b].value > 0.001:
+                            print(a, b, mod.cov_y[a,b].value)
+        
+        # compute FIM 
+        def eval_fim_warmstart(m, a, b):
+            """
+            Evaluate FIM
+            FIM = sum(cov_y[i,j]*unit FIM[i,j]) for all i, j in n_responses
+            Only compute the upper triangle part since FIM is symmetric
+
+            a, b: indices for FIM, iterate in parameter set 
+            """
+            # Only compute the upper triangle part since FIM is symmetric
+            if a <= b: 
+                # initialize the element
+                summi = 0 
+                # loop over the number of measurements
+                for i in m.n_responses:
+                    # loop over the number of measurements
+                    for j in m.n_responses:
+                        # cov_y is also a symmetric matrix, we use only the upper triangle of it to compute FIM
+                        if j>=i:
+                            summi += m.cov_y[i,j].value*self.fim_collection[i*m.num_measure_dynamic_flatten+j][a][b]
+                        else:
+                            summi += m.cov_y[j,i].value*self.fim_collection[i*m.num_measure_dynamic_flatten+j][a][b]
+                return summi
+                
+        # compute each element in FIM
+        # loop over number of parameters
+        for a in mod.dim_fim:
+            # loop over number of parameters
+            for b in mod.dim_fim:
+                # Only compute the upper triangle part since FIM is symmetric
+                if a<=b:
+                    # compute FIM[a,b]
+                    dynamic_initial_element = eval_fim_warmstart(mod, a,b)
+                    # FIM is symmetric, FIM[a,b] == FIM[b,a]
+                    new_fim[a,b] = dynamic_initial_element
+                    new_fim[b,a] = dynamic_initial_element   
+        
+        # initialize determinant 
+        # use slogdet to avoid ill-conditioning issue
+        _, det = np.linalg.slogdet(new_fim)
+
+        # if the FIM computed is a rank-deficient matrix, initialize with an identity matrix
+        if det <= -5: 
+            if self.optimize_print_level >= 1:
+                print("warmstart determinant is too small. Use an identity matrix as FIM")
+            # update FIM used 
+            new_fim = np.zeros((self.n_parameters,self.n_parameters))
+            # diagonal elements are 0.01
+            for i in range(self.n_parameters):
+                new_fim[i,i] = 0.01 
+
+        # add the FIM small diagonal element to FIM to be consistent
+        for i in range(self.n_parameters):
+            new_fim[i][i] += mod.fim_diagonal_small_element
+
+        # initialize grey-box module
+        # loop over parameters
+        for a in mod.dim_fim:
+            # loop over parameters
+            for b in mod.dim_fim:
+                # grey-box only needs the upper triangle elements for it only defines and flattens the upper half
+                if a<=b:
+                    mod.total_fim[a,b].value = new_fim[a][b]
+
+                    # grey-box uses a tuple as the input name
+                    grey_box_name = (a,b)
+                    # initialize grey-box value
+                    mod.my_block.egb.inputs[grey_box_name] = new_fim[a][b]
+
+        # initialize determinant 
+        # use slogdet to avoid ill-conditioning issue
+        _, logdet = np.linalg.slogdet(new_fim)
+
+        # initialize grey-box module output
+        mod.my_block.egb.outputs["log_det"] = logdet
+
+        if self.optimize_print_level >= 1:
+            print("Warmstart initialize FIM with: ", new_fim)
+            print("Warmstart logdet:", logdet)
+            print("Warmstart eigen value:", np.linalg.eigvals(new_fim))
+        
+        # manual and dynamic install initial 
+        def total_dynamic_exp(m):
+            """compute the number of time points selected in total, to initialize total_number_dynamic_measurements
+            This value is for initializing the total manual number constraint
+            """
+            return sum(m.cov_y[i,i].value for i in range(m.n_static_measurements, m.num_measure_dynamic_flatten))
+            
+        def total_exp(m):
+            """compute the number of all measurements selected in total, to initialize total_number_measurements
+            This value is for initializing integer cut
+            """
+            return sum(m.cov_y[i,i].value for i in range(m.num_measure_dynamic_flatten))    
+        
+        ### cost constraints
+        def cost_compute(m):
+            """Compute cost
+            cost = static-cost measurement cost + dynamic-cost measurement installation cost + dynamic-cost meausrement timepoint cost 
+            """
+            return sum(m.cov_y[i,i].value*m.cost_list[i] for i in m.n_responses)+sum(m.if_install_dynamic[j].value*m.dynamic_install_cost[j-m.n_static_measurements] for j in m.dim_dynamic)
+
+
+        # compute cost
+        cost_init = cost_compute(mod)
+        # copmute total number of dynamic time points selected
+        total_dynamic_initial = total_dynamic_exp(mod)
+        # compute total number of measurements selected
+        total_initial = total_exp(mod)
+        
+        # initialize model variables 
+        mod.total_number_dynamic_measurements.value = total_dynamic_initial 
+        mod.total_number_measurements.value = total_initial
+        mod.cost.value = cost_init
+        
+        if self.optimize_print_level >= 1:
+            print("warmstart initialize total measure:", total_initial)
+            print("warmstart initialize total dynamic: ", total_dynamic_initial )
+            print("warmstart initialize cost:", cost_init)
 
     def continuous_optimization_cvxpy(self, objective='D', budget=100, solver=None):
         """
