@@ -88,7 +88,6 @@ class SensitivityData:
         # read Jacobian from .csv file 
         self._read_from_csv(filename)
 
-        return 
     
     def _read_from_csv(self, filename):
         """Read Jacobian from csv file 
@@ -833,11 +832,6 @@ class MeasurementOptimizer:
 
         # measurements set
         m.n_responses = pyo.Set(initialize=range(self.num_measure_dynamic_flatten))
-        m.num_measure_dynamic_flatten = self.num_measure_dynamic_flatten
-        m.n_static_measurements = self.n_static_measurements
-        m.num_measure_dynamic_flatten = self.num_measure_dynamic_flatten
-        m.cost_list = self.cost_list
-        m.dynamic_install_cost = self.dynamic_install_cost
         # FIM set 
         m.dim_fim = pyo.Set(initialize=range(self.n_parameters))
 
@@ -1467,9 +1461,9 @@ class MeasurementOptimizer:
                     for j in m.n_responses:
                         # cov_y is also a symmetric matrix, we use only the upper triangle of it to compute FIM
                         if j>=i:
-                            summi += m.cov_y[i,j].value*self.fim_collection[i*m.num_measure_dynamic_flatten+j][a][b]
+                            summi += m.cov_y[i,j].value*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
                         else:
-                            summi += m.cov_y[j,i].value*self.fim_collection[i*m.num_measure_dynamic_flatten+j][a][b]
+                            summi += m.cov_y[j,i].value*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
                 return summi
                 
         # compute each element in FIM
@@ -1547,7 +1541,7 @@ class MeasurementOptimizer:
             """Compute cost
             cost = static-cost measurement cost + dynamic-cost measurement installation cost + dynamic-cost meausrement timepoint cost 
             """
-            return sum(m.cov_y[i,i].value*m.cost_list[i] for i in m.n_responses)+sum(m.if_install_dynamic[j].value*m.dynamic_install_cost[j-m.n_static_measurements] for j in m.dim_dynamic)
+            return sum(m.cov_y[i,i].value*self.cost_list[i] for i in self.n_responses)+sum(m.if_install_dynamic[j].value*self.dynamic_install_cost[j-self.n_static_measurements] for j in m.dim_dynamic)
 
 
         # compute cost

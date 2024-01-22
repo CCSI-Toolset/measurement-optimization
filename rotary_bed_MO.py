@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
-from measure_optimize import MeasurementOptimizer, DataProcess, CovarianceStructure, ObjectiveLib
+from measure_optimize import MeasurementOptimizer, SensitivityData, MeasurementData, CovarianceStructure, ObjectiveLib
 import pickle 
 import time
 
