@@ -134,7 +134,7 @@ dynamic_time_dict = {}
 for i, tim in enumerate(num_dynamic_time[1:]):
     dynamic_time_dict[i] = np.round(tim, decimals=2)
 
-def optimizer(budget_opt, initial_option, store_name=None):
+def optimizer(budget_opt, initial_option, update_model=False, store_name=None):
     """
     Initialize, formulate, and solve the MO problem. 
 
@@ -147,6 +147,7 @@ def optimizer(budget_opt, initial_option, store_name=None):
         # milp_A: initialize with milp_A solutions
         # lp_A: iniitalize with lp_A solution 
         # nlp_D: initialize with nlp_D solution
+    update_model: a Pyomo model or None. if given a Pyomo model, only update the budget
     store_name: if not None, store the solution and FIM in pickle file with the given name
     """
 
@@ -234,28 +235,33 @@ def optimizer(budget_opt, initial_option, store_name=None):
     for i in range(4):
         fim_prior[i][i] += small_element
 
+    # this time is to evaluate model creating time
     t1 = time.time()
 
-    
-    mod = calculator.continuous_optimization(mixed_integer=mip_option, 
-                        obj=objective, 
-                        mix_obj = mix_obj_option, 
-                        alpha = alpha_opt,
-                        fixed_nlp = fixed_nlp_opt,
-                        fix=fix_opt, 
-                        upper_diagonal_only=sparse_opt, 
-                        num_dynamic_t_name = num_dynamic_time, 
-                        budget=budget_opt,
-                        init_cov_y= init_cov_y,
-                        initial_fim = fim_prior,
-                        dynamic_install_initial = dynamic_install_init, 
-                        total_measure_initial = total_measure_init, 
-                        static_dynamic_pair=static_dynamic,
-                        time_interval_all_dynamic = time_interval_for_all,
-                        total_manual_num_init=total_manual_init,
-                        cost_initial = cost_init, 
-                        FIM_diagonal_small_element=small_element,
-                        print_level=1)
+    if not update_model:
+        # create model
+        mod = calculator.continuous_optimization(mixed_integer=mip_option, 
+                            obj=objective, 
+                            mix_obj = mix_obj_option, 
+                            alpha = alpha_opt,
+                            fixed_nlp = fixed_nlp_opt,
+                            fix=fix_opt, 
+                            upper_diagonal_only=sparse_opt, 
+                            num_dynamic_t_name = num_dynamic_time, 
+                            budget=budget_opt,
+                            init_cov_y= init_cov_y,
+                            initial_fim = fim_prior,
+                            dynamic_install_initial = dynamic_install_init, 
+                            total_measure_initial = total_measure_init, 
+                            static_dynamic_pair=static_dynamic,
+                            time_interval_all_dynamic = time_interval_for_all,
+                            total_manual_num_init=total_manual_init,
+                            cost_initial = cost_init, 
+                            FIM_diagonal_small_element=small_element,
+                            print_level=1)
+        
+    else:
+        update_model.budget = budget_opt
 
     t2 = time.time()
     mod = calculator.solve(mod, mip_option=mip_option, objective = objective)
@@ -264,7 +270,6 @@ def optimizer(budget_opt, initial_option, store_name=None):
     print("model and solver wall clock time:", t3-t1)
     print("solver wall clock time:", t3-t2)
         
-
     fim_result = np.zeros((4,4))
     for i in range(4):
         for j in range(i,4):
@@ -282,15 +287,30 @@ def optimizer(budget_opt, initial_option, store_name=None):
 
     if store_name:
         file = open(store_name+str(budget_opt), 'wb')
-
         pickle.dump(ans_y, file)
-
         file.close()
         
         file2 = open(store_name+"_fim_"+str(budget_opt), 'wb')
-
         pickle.dump(fim_result, file2)
-
         file2.close()
+
+    return mod
+
+
+# give range of budgets for this case
+budget_ranges = np.linspace(1000,5000,11)
+# initialize with A-opt. MILP solutions
+initializer_option = "milp_A"
+
+# create the model and solve for the first time 
+mod = optimizer(1000, initializer_option, save=False)
+
+# loop over all budgets
+for b in budget_ranges:
+    print("====Solving with budget:", b, "====")
+    # open the update toggle every time so no need to create model every time
+    optimizer(b, initializer_option, update_model=mod, save=True)
+
+
 
 
