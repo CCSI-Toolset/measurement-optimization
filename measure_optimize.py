@@ -200,6 +200,7 @@ class MeasurementData:
     :param dynamic_cost: a list of float, the dynamic cost of measurements  
     :param min_time_interval: float, the minimal time interval between two sampled time points 
     :param max_num_sample: int, the maximum number of samples for each measurement
+    :param total_max_num_sample: int, the maximum number of samples for all measurements
     """
     name: list
     jac_index: list
@@ -207,6 +208,7 @@ class MeasurementData:
     dynamic_cost: list
     min_time_interval: float
     max_num_sample: int 
+    total_max_num_sample: int
     
     def check_type(self):
         """This function is to check if the input types are consistent with what this class expects.
@@ -270,7 +272,7 @@ class MeasurementOptimizer:
         None 
         """
         # print_level received here is for the pre-computation stage 
-        self.precompute_print = print_level
+        self.precompute_print_level = print_level
 
         ## parse sensitivity info from SensitivityData
         # get total measurement number from the shape of Q
@@ -356,8 +358,20 @@ class MeasurementOptimizer:
         self.min_time_interval = self.measure_info.min_time_interval
 
         # each manual number, for one measurement, how many time points can be chosen at most 
-        # if this number is >= Nt, then there is no limitation to how many of them can be chosen, we use Nt for this number
-        self.each_manual_number = max(self.measure_info.max_manual_number, self.Nt)
+        # if this number is >= Nt, then there is no limitation to how many of them can be chosen
+        self.each_manual_number = self.measure_info.max_num_sample
+
+        # the maximum number of time points can be chosen for all DCMs 
+        self.manual_number = self.measure_info.total_max_num_sample
+
+        if self.precompute_print_level >= 2:
+            print("Minimal time interval between two samples:", self.min_time_interval)
+            print("Maximum number of samples for each measurement:", self.each_manual_number)
+            print("Maximum number of samples for all measurements:", self.manual_number)
+            if self.precompute_print_level == 3:
+                # print measurement information 
+                print("cost list of all measurements, including SCMs and time points for DCMs:", self.cost_list)
+                print("DCMs installation costs:", self.dynamic_cost_measure_info)
 
     def _check_consistent_sens_measure(self):
         """This function checks if SensitivityData and MeasurementData provide consistent inputs
@@ -515,7 +529,8 @@ class MeasurementOptimizer:
         # dimension after flatten
         self.num_measure_flatten = len(self.static_idx_flatten) + len(self.dynamic_idx_flatten)
 
-    
+        if self.precompute_print_level >= 2:
+            print("Number of binary decisions:", self.num_measure_dynamic_flatten)    
 
     def _build_sigma(self, error_cov, error_option):
         """Build error covariance matrix 
@@ -556,6 +571,11 @@ class MeasurementOptimizer:
                 # Sigma has 0 in all off-diagonal elements, error_cov gives the diagonal elements
                 Sigma[i,i] = error_cov[i]
 
+            if self.precompute_print_level >= 2: 
+                print("Error covariance matrix option:", error_option)
+                if self.precompute_print_level == 3:
+                    print("Error matrix:", Sigma)
+
         # different time correlation matrix for each measurement 
         # no covariance between measurements
         elif error_option == CovarianceStructure.time_correlation: 
@@ -570,6 +590,11 @@ class MeasurementOptimizer:
                     for t2 in range(self.Nt[i]):
                         # for the ith measurement, the error matrix is error_cov[i]
                         Sigma[sigma_i_start+t1, sigma_i_start+t2] = error_cov[i][t1][t2]
+
+            if self.precompute_print_level >= 2: 
+                print("Error covariance matrix option:", error_option)
+                if self.precompute_print_level == 3:
+                    print("Error matrix:", Sigma)
 
         # covariance between measurements 
         # the covariances between measurements at the same timestep in a time-invariant way
@@ -588,10 +613,20 @@ class MeasurementOptimizer:
                     # we find the corresponding index by locating the starting indices
                     for t in range(min(self.Nt[i], self.Nt[j])):
                         Sigma[t+head_i, t+head_j] = cov_ij 
+
+            if self.precompute_print_level >= 2: 
+                print("Error covariance matrix option:", error_option)
+                if self.precompute_print_level == 3:
+                    print("Error matrix:", Sigma)
      
         # the full covariance matrix is given
         elif error_option == CovarianceStructure.time_measure_correlation:
             Sigma = np.asarray(error_cov)
+
+            if self.precompute_print_level >= 2: 
+                print("Error covariance matrix option:", error_option)
+                if self.precompute_print_level == 3:
+                    print("Error matrix:", Sigma)
 
         self.Sigma = Sigma
 
@@ -694,6 +729,10 @@ class MeasurementOptimizer:
                 # store unit FIM following this order
                 self.fim_collection.append(unit.tolist())
 
+        if self.precompute_print_level >= 1: 
+            print("Number of unit FIMs:", len(self.fim_collection))
+
+
     def __measure_matrix(self, measurement_vector):
         """
         This is a helper function, when giving a vector of solutions, it converts this vector into a 2D array
@@ -728,7 +767,7 @@ class MeasurementOptimizer:
                                 mix_obj = False, alpha=1, fixed_nlp=False,
                                 fix=False, upper_diagonal_only=False,
                                 num_dynamic_t_name = None, 
-                                manual_number=20, budget=100, 
+                                budget=100, 
                                 init_cov_y=None, initial_fim=None,
                                 dynamic_install_initial = None,
                                 total_measure_initial = 1, 
@@ -736,8 +775,8 @@ class MeasurementOptimizer:
                                 time_interval_all_dynamic=False, 
                                 total_manual_num_init=10, 
                                 cost_initial = 100, 
-                               fim_diagonal_small_element=0, 
-                               print_level = 0):
+                                fim_diagonal_small_element=0, 
+                                print_level = 0):
         
         """Continuous optimization problem formulation. 
 
@@ -759,8 +798,6 @@ class MeasurementOptimizer:
             if using upper_diagonal_only set to define decisions and FIM, or not 
         :param num_dynamic_t_name: list
             a list of the exact time points for the dynamic-cost measurements time points 
-        :param manual_number: integer 
-            the maximum number of human measurements for dynamic measurements
         :param budget: integer
             total budget
         :param init_cov_y: list of lists
@@ -782,10 +819,10 @@ class MeasurementOptimizer:
         :param fim_diagonal_small_element: float
             a small number, default to be 0, to be added to FIM diagonal elements for better convergence
         :param print_level: integer
-            0 (default): no process information 
-            1: minimal info
-            2: intermediate 
-            3: everything
+            0 (default): no extra printing 
+            1: print to show it is working 
+            2: print for debugging 
+            3: print everything that could help with debugging 
 
         Returns
         -------
@@ -804,7 +841,12 @@ class MeasurementOptimizer:
         # FIM set 
         m.dim_fim = pyo.Set(initialize=range(self.n_parameters))
 
-        self.print_level = print_level
+        # set up pyomo parameters 
+        m.budget = pyo.Param(initialize=budget, mutable=True)
+        m.fim_diagonal_small_element = pyo.Param(initialize=fim_diagonal_small_element, mutable=True)
+
+        # print_level received here is for the optimization algorithm debugging
+        self.optimize_print_level = print_level
         
         self.fixed_nlp= fixed_nlp
         self.initial_fim = initial_fim
@@ -842,6 +884,9 @@ class MeasurementOptimizer:
         else:
             initialize=identity
 
+        if self.optimize_print_level ==3:
+            print("Binary solution matrix is initialized with:", initialize)
+
         # only define the upper triangle of symmetric matrices 
         def n_responses_half_init(m):
             return ((a,b) for a in m.n_responses for b in range(a, self.num_measure_dynamic_flatten))
@@ -876,13 +921,18 @@ class MeasurementOptimizer:
         def init_fim(m,p,q):
             return initial_fim[p,q]
         
+        # this function is used to initialize grey-box model 
         if initial_fim is not None:
-            # Initialize dictionary for grey-box model
+            # Initialize dictionary for grey-box model, 
+            # fim_initial_dict is given to greybox module as an argument
             fim_initial_dict = {}
             for i in range(self.n_parameters):
                 for j in range(i, self.n_parameters):
-                    str_name = 'ele_'+str(i)+"_"+str(j)
+                    str_name = (i,j)
                     fim_initial_dict[str_name] = initial_fim[i,j] 
+
+        if self.optimize_print_level >= 2: 
+            print("FIM is initialized with:", initial_fim)
         
         if upper_diagonal_only:
             m.total_fim = pyo.Var(m.dim_fim_half, initialize=init_fim)
@@ -909,7 +959,7 @@ class MeasurementOptimizer:
 
                 # if diagonal elements, a small element can be added to avoid rank deficiency
                 if a==b:
-                    return m.total_fim[a,b] == summi + fim_diagonal_small_element
+                    return m.total_fim[a,b] == summi + m.fim_diagonal_small_element
                 # if not diagonal, no need to add small number 
                 else:
                     return m.total_fim[a,b] == summi
@@ -992,12 +1042,12 @@ class MeasurementOptimizer:
         def cost_limit(m):
             """Total cost smaller than the given budget
             """
-            return m.cost <= budget 
+            return m.cost <= m.budget 
 
         def total_dynamic_con(m):
             """total number of manual dynamical measurements number
             """
-            return m.total_number_dynamic_measurements<=manual_number
+            return m.total_number_dynamic_measurements<=self.manual_number
         
         def dynamic_fix_yd(m,i,j):
             """if the install cost of one dynamical measurements should be considered 
@@ -1178,7 +1228,7 @@ class MeasurementOptimizer:
                     def eq_fim(m):
                         """Make FIM in this model equal to the FIM computed by grey-box. Necessary. 
                         """
-                        return m.total_fim[i,j] == m.my_block.egb.inputs["ele_"+str(i)+"_"+str(j)]
+                        return m.total_fim[i,j] == m.my_block.egb.inputs[(i,j)]
                     
                     con_name = "con"+str(i)+str(j)
                     m.add_component(con_name, pyo.Constraint(expr=eq_fim))
