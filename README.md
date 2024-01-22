@@ -66,20 +66,55 @@ How to create an environment to run code:
 - `Draw_figure.ipynb`: Generates all results figures in the manuscript
 
 
-## Example to run code for case studies
+## Example to run code and reproduce figures for case studies
 
-Setup the scripts to reproduce results from the paper: 
+Setup the scripts to reproduce result files and figures from the paper: 
 
 ### Kinetics case study 
 
 - Step 1: run `kinetics_MO.py`
-- Step 2: change budgets with the variable `budget_opt`
-- Step 3: use draw_figure.ipynb
+- Step 2: change budgets with the variable `budget_opt` in line 301.
+
+  Suggested ranges: 
+
+  In our results, we use the budget range [1000, 5000] with a 100 discretization,
+  i.e. [1000, 1100, ..., 5000], for relaxed problems
+
+  we use the budget range [1000, 5000] with a 400 discretization,
+  i.e. [1000, 1400, 1800, ..., 5000] for mixed-integer problems.
+
+  You can choose the same budget ranges, or only a few points of budgets, to run the script.
+
+- Step 3: store results for drawing figures
+
+  To do this, in line 312, define the param `store_name` with a string you given, for e.g., "MINLP_result_".
+
+  Then both the solutions and the FIM of the results are stored separately.
+
+  For e.g., if running in the range [1000, 5000], the stored files will be:
+
+  MINLP_result_1000, MINLP_result_fim_1000,
+
+  ...
+
+  MINLP_result_5000, MINLP_result_fim_5000,
+  
+- Step 4: use draw_figure.ipynb to read stored FIM and solutions
+
+  - `read_fim` receives the string name, for.e.g. `MINLP_result_`, and budget ranges, returns a list of A- and D-optimality values of the given FIMs
+ 
+  - `plot_data` receives both the A- and D-optimality of all four optimization strategies, and draw two figures like Fig. 3 in paper
+ 
+  - `read_solution` receives the string name, for e.g. `MINLP_result_`, and budget ranges, returns 6 lists: CA, CB, CC solutions as SCM and DCM,
+    each list contains four lists as results from four strategies
+ 
+  - `plot_one_solution` receives and draws the solution of one measurement under four strategies. To reproduce result figure like Fig. S-2 in paper, call it 6 times to draw all 6 figures and combine to a panel figure. 
+
+  
 
 ### Rotary bed case study 
 
-run `rotary_bed_MO.py`
-- change budgets with the variable `budget_opt`
+run `rotary_bed_MO.py`. This is under working, following similar patterns as running `kinetics_MO.py`. 
 
 ## Source files
 
