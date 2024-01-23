@@ -303,13 +303,13 @@ budget_ranges = np.linspace(1000,5000,11)
 initializer_option = "milp_A"
 
 # create the model and solve for the first time 
-mod = optimizer(1000, initializer_option, save=False)
+mod = optimizer(1000, initializer_option)
 
 # loop over all budgets
 for b in budget_ranges:
     print("====Solving with budget:", b, "====")
     # open the update toggle every time so no need to create model every time
-    optimizer(b, initializer_option, update_model=mod, save=True)
+    optimizer(b, initializer_option, update_model=mod, store_name = "MINLP_result_")
 
 
 
