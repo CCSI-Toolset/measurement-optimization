@@ -1,10 +1,12 @@
-# Measurement Optimization 
+# Measurement This, Not That: Optimizing the Cost and Model-Based Information Content of Measurements
+
+Authors: Jialu Wang, Zedong Peng, Ryan Hughes, Debangsu Bhattacharyya, David E. Bernal Neira, Alexander W. Dowling 
 
 This repository contains code and results for paper: Measure this, not that: Optimizing the cost and model-based information content of measurements 
 
 ## Installation instructions 
 
-How to create an environment to run code: 
+The following instructions assume you have anaconda installed. We suggest create an environment with the following commands to run code: 
 
 ### Step 1: create a new environment 
 - create new environment, called for e.g. `measurement_optimization`, with `conda` with `Python` version 3.8
@@ -22,7 +24,7 @@ How to create an environment to run code:
 `idaes get-extensions`
    
 ### Step 3: install `Pyomo` from specified branches
-- a generalization version is under working. For now, we use two different branches for each case study:
+- a generalization version is in progress, although still need to get debugged. For now, we use two different branches for each case study:
 - branch for kinetic case study: 
 
   `pip install git+https://github.com/jialuw96/pyomo.git@MindtpyReactor`
