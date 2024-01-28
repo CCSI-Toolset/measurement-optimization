@@ -697,7 +697,7 @@ class MeasurementOptimizer:
         unit FIMs include DCM-DCM FIM, DCM-SCM FIM, SCM-SCM FIM
         """
 
-        self.fim_collection = []
+        self.unit_fims = []
 
         # loop over measurement index
         for i in range(self.num_measure_dynamic_flatten):
@@ -726,10 +726,10 @@ class MeasurementOptimizer:
                     unit = self.Sigma_inv[(i,j)]*np.asarray(self.jac_dynamic_flatten[i]).reshape(1, self.n_parameters).T@np.asarray(self.jac_dynamic_flatten[j]).reshape(1,self.n_parameters)
 
                 # store unit FIM following this order
-                self.fim_collection.append(unit.tolist())
+                self.unit_fims.append(unit.tolist())
 
         if self.precompute_print_level >= 1: 
-            print("Number of unit FIMs:", len(self.fim_collection))
+            print("Number of unit FIMs:", len(self.unit_fims))
 
 
     def __measure_matrix(self, measurement_vector):
@@ -949,7 +949,7 @@ class MeasurementOptimizer:
                         # the FIM order is i*num_measurement + j no matter if i is the smaller one or the bigger one
                         large_idx = max(i,j)
                         small_idx = min(i,j)
-                        summi += m.cov_y[small_idx,large_idx]*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]   
+                        summi += m.cov_y[small_idx,large_idx]*self.unit_fims[i*self.num_measure_dynamic_flatten+j][a][b]   
 
                 # if diagonal elements, a small element can be added to avoid rank deficiency
                 if a==b:
@@ -1461,9 +1461,9 @@ class MeasurementOptimizer:
                     for j in m.n_responses:
                         # cov_y is also a symmetric matrix, we use only the upper triangle of it to compute FIM
                         if j>=i:
-                            summi += m.cov_y[i,j].value*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
+                            summi += m.cov_y[i,j].value*self.unit_fims[i*self.num_measure_dynamic_flatten+j][a][b]
                         else:
-                            summi += m.cov_y[j,i].value*self.fim_collection[i*self.num_measure_dynamic_flatten+j][a][b]
+                            summi += m.cov_y[j,i].value*self.unit_fims[i*self.num_measure_dynamic_flatten+j][a][b]
                 return summi
                 
         # compute each element in FIM
@@ -1585,7 +1585,7 @@ class MeasurementOptimizer:
             """Evaluate FIM from y solution
             FIM = sum(cov_y[i,j]*unit FIM[i,j]) for all i, j in n_responses
             """
-            fim = sum(y[i,j]*self.fim_collection[i*self.total_no_measure+j] for i in range(self.total_no_measure) for j in range(self.total_no_measure))
+            fim = sum(y[i,j]*self.unit_fims[i*self.total_no_measure+j] for i in range(self.total_no_measure) for j in range(self.total_no_measure))
             return fim
 
         def a_opt(y):

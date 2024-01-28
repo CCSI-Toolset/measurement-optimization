@@ -97,14 +97,20 @@ measure_info = MeasurementData(
 # read jacobian from the source csv 
 # Nt is the number of time points for each measurement
 jac_info = SensitivityData('./kinetics_fim/Q_drop0.csv', Nt)
-jac_info.get_jac_list([0,1,2], # the index of CA, CB, CC in the jacobian array
-                          [0,1,2]) # the index of CA, CB, CC in the jacobian array
+static_measurement_index = [0,1,2] # the index of CA, CB, CC in the jacobian array, considered as SCM
+dynamic_measurement_index = [0,1,2] # the index of CA, CB, CC in the jacobian array, also considered as DCM
+jac_info.get_jac_list(static_measurement_index, # the index of SCMs in the jacobian array
+                    dynamic_measurement_index) # the index of DCMs in the jacobian array
 
 # use MeasurementOptimizer to pre-compute the unit FIMs
-calculator = MeasurementOptimizer(jac_info, measure_info, error_cov=error_cov, error_opt=CovarianceStructure.measure_correlation, verbose=True)
+calculator = MeasurementOptimizer(jac_info, # SensitivityData object
+                                  measure_info, # MeasurementData object
+                                  error_cov=error_cov, # error covariance matrix 
+                                  error_opt=CovarianceStructure.measure_correlation  # error covariance options 
+                                  ) 
 
 # calculate a list of unit FIMs 
-fim_expect = calculator.fim_computation()
+calculator.fim_computation()
 
 ### MO optimization framework 
 # extract number of SCM, DCM, and total number of measurements
