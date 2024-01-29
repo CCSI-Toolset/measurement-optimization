@@ -9,6 +9,7 @@ from greybox_generalize import LogDetModel
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel, ExternalGreyBoxBlock
 from enum import Enum
 from dataclasses import dataclass
+import pickle
 
 class CovarianceStructure(Enum): 
     """Covariance definition 
@@ -108,14 +109,13 @@ class SensitivityData:
         # check if the number of rows in this array is a multiple of Nt 
         if len(jacobian_array)%self.Nt != 0:
             raise ValueError("The number of rows in this Jacobian matrix is not a multiple of Nt.")
+        
+        # infer the number of parameters from the shape of jacobian 
+        # the first column is the measurement name, so needs to be deleted
+        self.n_parameters = len(jacobian_array[0])-1 
 
-        # Jacobian_array (N*Np matrix) is converted to a list of lists (each list is a [Np*1] vector)
-        # to separate different measurements
-        # because FIM requires different gradient [Np*1] vectors multiply together
-        # first columns are parameter names in string, so to be removed
-        # Jacobian remove first column which is column index. see doc string for example input
-        # return all rows and all columns except the first one
-        self.jacobian = list(jacobian_array[:][1:])
+        # store the original Jacobian matrix in object
+        self.jacobian = jacobian_array
 
 
     def get_jac_list(self, static_measurement_idx, dynamic_measurement_idx):
@@ -150,44 +150,63 @@ class SensitivityData:
         if len(jac)<max_measure_idx*self.Nt:
             raise ValueError("Inconsistent Jacobian matrix shape. Expecting at least "+str(max_measure_idx*self.Nt)+" rows in Jacobian matrix Q.")
 
-        # initialize Jacobian Q as a list of lists, after stacking all Jacobians, it is converted to numpy array
-        # after spliting the overall Jacobian to separate Jacobians for each measurement by self._split_jacobian
-        # each separate Jacobians becomes a list of lists
+        # if one measurement is in both SCM indices and DCM indices, its Jacobian is included twice (overlap is allowed)
+        # compute how many measurements as SCM
+        if static_measurement_idx:
+            static_idx_len = len(static_measurement_idx)
+        # if given None, this variable is given 0 (len(None) gives error message)
+        else:
+            static_idx_len = 0 
+
+        # compute how many measurements as DCM
+        if dynamic_measurement_idx:
+            dynamic_idx_len = len(dynamic_measurement_idx)
+        # if given None, this variable is given 0 (len(None) gives error message)
+        else:
+            dynamic_idx_len = 0 
+
+        # compute N_total_measure, including both SCMs and DCMs
+        # all measurements have Nt time points 
+        total_measure_len = (static_idx_len + dynamic_idx_len)*self.Nt
+
+        # initialize Jacobian Q as numpy array
         # here we stack the Jacobian Q according to the orders the user provides SCM and DCM index
-        # jac: Jacobian matrix of shape N_measure * Np
-        jac = [] 
+        # jac: Jacobian matrix of shape N_total_measure * Np
+        jac = np.zeros((total_measure_len, self.n_parameters))
+        # update row number counter in the reassembled jac
+        # starts from -1 because we add one every time before giving it a value
+        update_row_counter = -1 
         # if there is static-cost measurements
         if static_measurement_idx is not None:
             # loop over SCM indices
             for i in static_measurement_idx:
-                jac.append(self._split_jacobian(i))
+                # loop over time points
+                for t in range(self.Nt):
+                    # locate the row number in the original Jacobian information 
+                    row_number = i*self.Nt + t 
+                    # update the row number in the assembled Jacobian matrix
+                    update_row_counter += 1 
+                    # loop over columns, i.e. parameters
+                    for p in range(self.n_parameters):
+                        # it maps to column p+1 in the original Jacobian, because the first column is measurement name
+                        jac[update_row_counter][p] = self.jacobian[row_number][p+1]
         # if there is dynamic-cost measurements
         if dynamic_measurement_idx is not None:
             # loop over DCM indices
             for j in dynamic_measurement_idx:
-                jac.append(self._split_jacobian(j))
+                # loop over time points 
+                for t in range(self.Nt):
+                    # locate the row number in the origianl Jacobian information
+                    row_number = j*self.Nt + t 
+                    # update row number in assembled Jacobian matrix 
+                    update_row_counter += 1 
+                    # loop over columns, i.e. parameters
+                    for p in range(self.n_parameters):
+                        # it maps to column p+1 in the original Jacobian, because the first column is measurement name
+                        jac[update_row_counter][p] = self.jacobian[row_number][p+1]
 
         self.jac = jac
 
-
-    def _split_jacobian(self, idx):
-        """Split Jacobian according to measurements
-        It splits the overall stacked Q matrix to 
-        Q for measurement 1, Q for measurement 2, ..., Q for measurement N 
-
-        Arguments
-        ---------
-        idx: idx of measurements
-
-        Returns
-        -------
-        jacobian_idx: a Nt*Np matrix, Nt is the number of timepoints for the measurement. 
-            Jacobian information for one measurement 
-            they are slicing indices for Jacobian matrix
-        """
-        # get a Nt*Np matrix, Nt is the number of timepoint for the measurement 
-        jacobian_idx = self.jacobian[idx*self.Nt:(idx+1)*self.Nt][:]
-        return jacobian_idx 
     
 @dataclass
 class MeasurementData:
@@ -1414,6 +1433,165 @@ class MeasurementOptimizer:
             )
 
         return mod
+    
+    def optimizer(self, budget_opt, initial_option, update_model=False, store_name=None):
+        """
+        Initialize, formulate, and solve the MO problem. 
+
+        Arguments 
+        ---------
+        budget_opt: budget 
+        initial_option: choice of using which initial file
+            # choose what solutions to initialize from: 
+            # minlp_D: initialize with minlp_D solutions
+            # milp_A: initialize with milp_A solutions
+            # lp_A: iniitalize with lp_A solution 
+            # nlp_D: initialize with nlp_D solution
+        update_model: a Pyomo model or None. if given a Pyomo model, only update the budget
+        store_name: if not None, store the solution and FIM in pickle file with the given name
+        """
+
+        # ==== initialization strategy ==== 
+        if initial_option == "milp_A":
+            curr_results = np.linspace(1000, 5000, 11)
+            file_name_pre, file_name_end = './kinetics_results/MILP_', '_a'
+
+        elif initial_option == "minlp_D":
+            curr_results = np.linspace(1000, 5000, 11)
+            file_name_pre, file_name_end = './kinetics_results/MINLP_', '_d_mip'
+
+        elif initial_option == "lp_A":
+            curr_results = np.linspace(1000, 5000, 41)
+            file_name_pre, file_name_end = './kinetics_results/LP_', '_a'
+
+        elif initial_option == "nlp_D":
+            curr_results = np.linspace(1000, 5000, 41)
+            file_name_pre, file_name_end = './kinetics_results/NLP_', '_d'
+
+
+        # current results is a range containing the budgets at where the problems are solved 
+        curr_results = set([int(curr_results[i]) for i in range(len(curr_results))])
+
+        ## find if there has been a original solution for the current budget
+        if budget_opt in curr_results: # use an existed initial solutioon
+            curr_budget = budget_opt
+
+        else:
+            # if not, find the closest budget, and use this as the initial point
+            curr_min_diff = np.inf # current minimal budget difference 
+            curr_budget = 5000 # starting point
+            
+            # find the existing budget that minimize curr_min_diff
+            for i in curr_results:
+                # if we found an existing budget that is closer to the given budget
+                if abs(i-budget_opt) < curr_min_diff:
+                    curr_min_diff = abs(i-budget_opt)
+                    curr_budget = i
+
+            print("using solution at", curr_budget, " too initialize")
+
+        # assign solution file names, and FIM file names
+        y_init_file = file_name_pre+str(curr_budget)+file_name_end
+        fim_init_file = file_name_pre+'fim_'+str(curr_budget)+file_name_end
+
+        # read y 
+        with open(y_init_file, 'rb') as f:
+            init_cov_y = pickle.load(f)
+
+        # Round possible float solution to be integer 
+        for i in range(num_total):
+            for j in range(num_total):
+                if init_cov_y[i][j] > 0.99:
+                    init_cov_y[i][j] = int(1)
+                else:
+                    init_cov_y[i][j] = int(0)
+                    
+        # initialize total manual number 
+        total_manual_init = 0 
+        # initialize the DCM installation flags
+        dynamic_install_init = [0,0,0]
+
+        # round solutions
+        # if floating solutions, if value > 0.01, we count it as an integer decision that is 1 or positive
+        for i in range(num_static,num_total):
+            if init_cov_y[i][i] > 0.01:
+                total_manual_init += 1 
+                
+                # identify which DCM this timepoint belongs to, turn the installation flag to be positive 
+                i_pos = int((i-num_static)/Nt)
+                dynamic_install_init[i_pos] = 1
+                
+        # compute total measurements number, this is for integer cut
+        total_measure_init = sum(init_cov_y[i][i] for i in range(num_total))
+                
+        # initialize cost, this cost is calculated by the given initial solution
+        cost_init = sum(dynamic_install_init)*200+total_manual_init*400 + (init_cov_y[0][0]+init_cov_y[1][1]+init_cov_y[2][2])*2000
+
+        # read FIM, initialize FIM and logdet
+        with open(fim_init_file, 'rb') as f:
+            fim_prior = pickle.load(f)
+            
+        # initialize FIM with a small element 
+        for i in range(4):
+            fim_prior[i][i] += small_element
+
+        # this time is to evaluate model creating time
+        t1 = time.time()
+
+        if not update_model:
+            # create model
+            mod = calculator.continuous_optimization(mixed_integer=mip_option, 
+                                obj=objective, 
+                                mix_obj = mix_obj_option, 
+                                alpha = alpha_opt,
+                                fixed_nlp = fixed_nlp_opt,
+                                fix=fix_opt, 
+                                upper_diagonal_only=sparse_opt, 
+                                num_dynamic_t_name = num_dynamic_time, 
+                                budget=budget_opt,
+                                init_cov_y= init_cov_y,
+                                initial_fim = fim_prior,
+                                dynamic_install_initial = dynamic_install_init, 
+                                total_measure_initial = total_measure_init, 
+                                static_dynamic_pair=static_dynamic,
+                                time_interval_all_dynamic = time_interval_for_all,
+                                total_manual_num_init=total_manual_init,
+                                cost_initial = cost_init, 
+                                FIM_diagonal_small_element=small_element,
+                                print_level=1)
+            
+        else:
+            update_model.budget = budget_opt
+
+        
+
+        return mod
+    
+    def extract_store_sol(self, mod, store_name, budget_opt):
+        fim_result = np.zeros((self.n_parameters,self.n_parameters))
+        for i in range(self.n_parameters):
+            for j in range(i,self.n_parameters):
+                fim_result[i,j] = fim_result[j,i] = pyo.value(mod.TotalFIM[i,j])
+                
+        print(fim_result)  
+        print('trace:', np.trace(fim_result))
+        print('det:', np.linalg.det(fim_result))
+        print(np.linalg.eigvals(fim_result))
+
+        ans_y, sol_y = calculator.extract_solutions(mod)
+        print('pyomo calculated cost:', pyo.value(mod.cost))
+        print("if install dynamic measurements:")
+        print(pyo.value(mod.if_install_dynamic[3]))
+
+        if store_name:
+
+            file = open(store_name+str(budget_opt), 'wb')
+            pickle.dump(ans_y, file)
+            file.close()
+            
+            file2 = open(store_name+"_fim_"+str(budget_opt), 'wb')
+            pickle.dump(fim_result, file2)
+            file2.close()
     
     def customized_warmstart(self, mod):
         """
