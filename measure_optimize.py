@@ -228,26 +228,27 @@ class MeasurementData:
     max_num_sample: int 
     total_max_num_sample: int
     
-    def check_type(self):
+    def _check_if_input_is_valid(self):
         """This function is to check if the input types are consistent with what this class expects.
+        Adapted from: https://stackoverflow.com/questions/50563546/validating-detailed-types-in-python-dataclasses
+        from the answer of @Arne
         """
-        # flag to check if there is any wrong type
-        ret = True
         # loop over all names of this dataclass
         for field_name, field_def in self.__dataclass_fields__.items():
+            # get the type the input it should be 
+            data_type = field_def.type
             # get the actual type we get from the user's input
-            actual_type = type(getattr(self, field_name))
+            input_type = type(getattr(self, field_name))
             # check if the actual type is the same with what we expect
-            if actual_type != field_def.type:
-                print(f"\t{field_name}: '{actual_type}' instead of '{field_def.type}'")
-                ret = False
-        return ret
+            if input_type != field_def.type:
+                raise ValueError("Instead of getting type ", data_type, ", the input is ", input_type)    
+
         
     def __post_init__(self):
         """This is added for error checking. 
         """
-        if not self.check_type():
-            raise ValueError("Wrong types")
+        # if one input is not the type it is supposed to be, throw error
+        self._check_if_input_is_valid()
 
 class MeasurementOptimizer:
     def __init__(self, jac, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, print_level=0):
