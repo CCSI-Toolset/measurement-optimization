@@ -251,11 +251,11 @@ class MeasurementData:
         self._check_if_input_is_valid()
 
 class MeasurementOptimizer:
-    def __init__(self, jac, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, print_level=0):
+    def __init__(self, sens_info, measure_info, error_cov=None, error_opt=CovarianceStructure.identity, print_level=0):
         """
         Arguments
         ---------
-        :param jac: the SensitivityData object
+        :param sens_info: the SensitivityData object
             containing Jacobian matrix jac and the number of timepoints Nt
             jac contains m lists, m is the number of meausrements 
             Each list contains an N_t_m*n_parameters elements, which is the sensitivity matrix Q for measurement m 
@@ -295,11 +295,10 @@ class MeasurementOptimizer:
 
         ## parse sensitivity info from SensitivityData
         # get total measurement number from the shape of Q
-        self.n_total_measurements = len(jac.jac)
-        # measurements can have different # of timepoints
-        # Nt key: measurement index, value: # of timepoints for this measure
-        self.Nt = jac.Nt
-        self.n_parameters = len(jac.jac[0][0]) 
+        self.n_total_measurements = len(sens_info.jac)
+
+        # store the sens object
+        self.sens_info = sens_info
 
         ## parse measurement info from MeasurementData
         self.measure_info = measure_info
@@ -310,7 +309,7 @@ class MeasurementOptimizer:
         self._check_consistent_sens_measure()
     
         # flattened Q and indexes
-        self._dynamic_flatten(jac.jac)
+        self._dynamic_flatten(sens_info.jac)
 
         # build and check PSD of Sigma
         # check sigma inputs 
@@ -324,7 +323,7 @@ class MeasurementOptimizer:
 
     def _parse_measure_info(self):
         """
-        This function decodes information from measure_info dataframe.
+        This function decodes information from measure_info object.
         """
         # indices of static and dynamic measurements, stored in lists
         static_measurement_idx, dynamic_measurement_idx = [], [] 
@@ -366,11 +365,11 @@ class MeasurementOptimizer:
         # loop over DCM index list
         for i in self.dynamic_measurement_idx:
             # loop over dynamic-cost measurements time points
-            for _ in range(self.Nt):
+            for _ in range(self.sens_info.Nt):
                 self.cost_list.append(self.measure_info.dynamic_cost[i])
 
         # total number of all measurements and all time points
-        self.total_num_time = self.Nt*(self.n_static_measurements+self.n_dynamic_measurements)
+        self.total_num_time = self.sens_info.Nt*(self.n_static_measurements+self.n_dynamic_measurements)
 
         # min time interval, only for dynamic-cost measurements
         # if there is no min time interval, it is 0
@@ -396,7 +395,7 @@ class MeasurementOptimizer:
         """This function checks if SensitivityData and MeasurementData provide consistent inputs
         """
         # check if the index list of MeasurementData is in the range of SensitivityData
-        if (max(self.measure_info.jac_index)+1)*self.Nt > self.n_total_measurements:
+        if (max(self.measure_info.jac_index)+1)*self.sens_info.Nt > self.n_total_measurements:
             raise ValueError("The measurement index is out of the range of the given Jacobian matrix")
 
         
@@ -441,11 +440,11 @@ class MeasurementOptimizer:
             # loop over the index of DCM to retrieve the number of time points for DCM
             for i in range(self.n_total_measurements):
                 # check row number
-                if len(error_cov[0])!=self.Nt[i]:
-                    raise ValueError("error_cov[i] must have the shape Nt[i]*Nt[i]. Expect number of rows:"+str(self.Nt[i]))
+                if len(error_cov[0])!=self.sens_info.Nt[i]:
+                    raise ValueError("error_cov[i] must have the shape Nt[i]*Nt[i]. Expect number of rows:"+str(self.sens_info.Nt[i]))
                 # check column number
-                if len(error_cov[0][0])!=self.Nt[i]:
-                    raise ValueError("error_cov[i] must have the shape Nt[i]*Nt[i]. Expect number of columns:"+str(self.Nt[i]))
+                if len(error_cov[0][0])!=self.sens_info.Nt[i]:
+                    raise ValueError("error_cov[i] must have the shape Nt[i]*Nt[i]. Expect number of columns:"+str(self.sens_info.Nt[i]))
 
         elif error_option == CovarianceStructure.measure_correlation:
             # check row number
@@ -605,8 +604,8 @@ class MeasurementOptimizer:
                 sigma_i_start = self.head_pos_flatten[i]
                 # loop over all timepoints for measurement i 
                 # for each measurement, the time correlation matrix is Nt*Nt
-                for t1 in range(self.Nt[i]):
-                    for t2 in range(self.Nt[i]):
+                for t1 in range(self.sens_info.Nt[i]):
+                    for t2 in range(self.sens_info.Nt[i]):
                         # for the ith measurement, the error matrix is error_cov[i]
                         Sigma[sigma_i_start+t1, sigma_i_start+t2] = error_cov[i][t1][t2]
 
@@ -630,7 +629,7 @@ class MeasurementOptimizer:
                     head_j = self.head_pos_flatten[j]
                     # i, j may have different timesteps
                     # we find the corresponding index by locating the starting indices
-                    for t in range(min(self.Nt[i], self.Nt[j])):
+                    for t in range(min(self.sens_info.Nt[i], self.sens_info.Nt[j])):
                         Sigma[t+head_i, t+head_j] = cov_ij 
 
             if self.precompute_print_level >= 2: 
@@ -677,10 +676,10 @@ class MeasurementOptimizer:
         for i in self.static_idx_dynamic_flatten: # loop over static measurement index
             for j in self.static_idx_dynamic_flatten: # loop over static measurement index 
                 # should be a (Nt_i+Nt_j)*(Nt_i+Nt_j) matrix
-                sig = np.zeros((self.Nt[i], self.Nt[j]))
+                sig = np.zeros((self.sens_info.Nt[i], self.sens_info.Nt[j]))
                 # row [i, i+Nt_i], column [i, i+Nt_i]
-                for ti in range(self.Nt[i]): # loop over time points 
-                    for tj in range(self.Nt[j]): # loop over time points
+                for ti in range(self.sens_info.Nt[i]): # loop over time points 
+                    for tj in range(self.sens_info.Nt[j]): # loop over time points
                         sig[ti, tj] = Sigma_inv[self.head_pos_flatten[i]+ti, self.head_pos_flatten[j]+tj]
                 self.Sigma_inv[(i,j)] = sig
 
@@ -688,9 +687,9 @@ class MeasurementOptimizer:
         for i in self.static_idx_dynamic_flatten: # loop over static measurement index
             for j in self.dynamic_idx_dynamic_flatten: # loop over dynamic measuremente index 
                 # should be a vector, here as a Nt*1 matrix
-                sig = np.zeros((self.Nt[i], 1))
+                sig = np.zeros((self.sens_info.Nt[i], 1))
                 # row [i, i+Nt_i], col [j]
-                for t in range(self.Nt[i]): # loop over time points 
+                for t in range(self.sens_info.Nt[i]): # loop over time points 
                     sig[t, 0] = Sigma_inv[self.head_pos_flatten[i]+t, self.dynamic_to_flatten[j]] 
                 self.Sigma_inv[(i,j)] = sig
 
@@ -698,9 +697,9 @@ class MeasurementOptimizer:
         for i in self.dynamic_idx_dynamic_flatten: # loop over dynamic measurement index 
             for j in self.static_idx_dynamic_flatten: # loop over static measurement index
                 # should be a vector, here as Nt*1 matrix 
-                sig = np.zeros((self.Nt[j], 1)) 
+                sig = np.zeros((self.sens_info.Nt[j], 1)) 
                 # row [j, j+Nt_j], col [i]
-                for t in range(self.Nt[j]): # loop over time 
+                for t in range(self.sens_info.Nt[j]): # loop over time 
                     sig[t, 0] = Sigma_inv[self.head_pos_flatten[j]+t, self.dynamic_to_flatten[i]] 
                 self.Sigma_inv[(i,j)] = sig
 
@@ -711,7 +710,7 @@ class MeasurementOptimizer:
                 self.Sigma_inv[(i,j)] = Sigma_inv[self.dynamic_to_flatten[i],self.dynamic_to_flatten[j]]
 
         
-    def fim_computation(self):
+    def assemble_unit_fims(self):
         """
         compute a list of FIM. 
         unit FIMs include DCM-DCM FIM, DCM-SCM FIM, SCM-SCM FIM
@@ -733,17 +732,17 @@ class MeasurementOptimizer:
                 # static*dynamic
                 elif i in self.static_idx_dynamic_flatten and j in self.dynamic_idx_dynamic_flatten:
                     #print("static*dynamic, cov:", self.Sigma_inv[(i,j)])
-                    unit = np.asarray(self.jac_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.jac_dynamic_flatten[j]).reshape(1,self.n_parameters)
+                    unit = np.asarray(self.jac_dynamic_flatten[i]).T@self.Sigma_inv[(i,j)]@np.asarray(self.jac_dynamic_flatten[j]).reshape(1,self.sens_info.n_parameters)
 
                 # static*dynamic
                 elif i in self.dynamic_idx_dynamic_flatten and j in self.static_idx_dynamic_flatten:
                     #print("static*dynamic, cov:", self.Sigma_inv[(i,j)])
-                    unit = np.asarray(self.jac_dynamic_flatten[i]).reshape(1, self.n_parameters).T@self.Sigma_inv[(i,j)].T@np.asarray(self.jac_dynamic_flatten[j])
+                    unit = np.asarray(self.jac_dynamic_flatten[i]).reshape(1, self.sens_info.n_parameters).T@self.Sigma_inv[(i,j)].T@np.asarray(self.jac_dynamic_flatten[j])
 
                 # dynamic*dynamic
                 else:
                     #print("dynamic*dynamic, cov:", self.Sigma_inv[(i,j)])
-                    unit = self.Sigma_inv[(i,j)]*np.asarray(self.jac_dynamic_flatten[i]).reshape(1, self.n_parameters).T@np.asarray(self.jac_dynamic_flatten[j]).reshape(1,self.n_parameters)
+                    unit = self.Sigma_inv[(i,j)]*np.asarray(self.jac_dynamic_flatten[i]).reshape(1, self.sens_info.n_parameters).T@np.asarray(self.jac_dynamic_flatten[j]).reshape(1,self.sens_info.n_parameters)
 
                 # store unit FIM following this order
                 self.unit_fims.append(unit.tolist())
@@ -755,7 +754,7 @@ class MeasurementOptimizer:
     def __measure_matrix(self, measurement_vector):
         """
         This is a helper function, when giving a vector of solutions, it converts this vector into a 2D array
-        This is needed for proofing the solutions after the optimization, 
+        This is needed for validating the solutions after the optimization, 
         since we only computes the half diagonal of the measurement matrice and flatten it. 
 
         Arguments
@@ -853,7 +852,7 @@ class MeasurementOptimizer:
         # measurements set
         m.n_responses = pyo.Set(initialize=range(self.num_measure_dynamic_flatten))
         # FIM set 
-        m.dim_fim = pyo.Set(initialize=range(self.n_parameters))
+        m.dim_fim = pyo.Set(initialize=range(self.sens_info.n_parameters))
 
         # set up pyomo parameters 
         m.budget = pyo.Param(initialize=budget, mutable=True)
@@ -866,7 +865,7 @@ class MeasurementOptimizer:
         self.initial_fim = initial_fim
         # dynamic measurements parameters 
         # dynamic measurement number of timepoints 
-        self.dynamic_Nt = self.Nt[self.n_static_measurements]
+        self.dynamic_Nt = self.sens_info.Nt
         # dynamic measurement index number 
         # Pyomo model explicitly numbers all of the static measurements first and then all of the dynmaic measurements
         m.dim_dynamic = pyo.Set(initialize=range(self.n_static_measurements, self.n_total_measurements))
@@ -907,7 +906,7 @@ class MeasurementOptimizer:
         
         # only define the upper triangle of FIM 
         def dim_fim_half_init(m):
-            return ((a,b) for a in m.dim_fim for b in range(a, self.n_parameters))
+            return ((a,b) for a in m.dim_fim for b in range(a, self.sens_info.n_parameters))
         
         # set for measurement y matrix
         m.responses_upper_diagonal = pyo.Set(dimen=2, initialize=n_responses_half_init)
@@ -940,8 +939,8 @@ class MeasurementOptimizer:
             # Initialize dictionary for grey-box model, 
             # fim_initial_dict is given to greybox module as an argument
             fim_initial_dict = {}
-            for i in range(self.n_parameters):
-                for j in range(i, self.n_parameters):
+            for i in range(self.sens_info.n_parameters):
+                for j in range(i, self.sens_info.n_parameters):
                     str_name = (i,j)
                     fim_initial_dict[str_name] = initial_fim[i,j] 
 
@@ -956,7 +955,7 @@ class MeasurementOptimizer:
         ### compute FIM 
         def eval_fim(m, a, b):
             """
-            Evaluate FIM
+            Add constraints to calculate FIM from unit contributions
             FIM = sum(cov_y[i,j]*unit FIM[i,j]) for all i, j in n_responses
 
             a, b: indices for FIM, iterate in parameter set 
@@ -1036,6 +1035,7 @@ class MeasurementOptimizer:
         def symmetry(m,a,b):
             """
             Ensure the symmetry of y matrix.
+            This function is only called if upper_diagonal_only = False. 
             This is only modeled if we model the whole FIM, instead of defining only upper triangle of y
             """
             if a<b:
@@ -1236,9 +1236,9 @@ class MeasurementOptimizer:
                 print("Pyomo creates grey-box with initial FIM:", fim_initial_dict)
 
             # loop over parameters
-            for i in range(self.n_parameters):
+            for i in range(self.sens_info.n_parameters):
                 # loop over upper triangle of FIM
-                for j in range(i, self.n_parameters):
+                for j in range(i, self.sens_info.n_parameters):
                     def eq_fim(m):
                         """Make FIM in this model equal to the FIM computed by grey-box. Necessary. 
                         """
@@ -1282,7 +1282,7 @@ class MeasurementOptimizer:
         None
         """
         # use the same print_level as the pyomo model
-        ex_model = LogDetModel(n_parameters=self.n_parameters, initial_fim=fim_init, print_level=self.print_level)
+        ex_model = LogDetModel(n_parameters=self.sens_info.n_parameters, initial_fim=fim_init, print_level=self.print_level)
         m.egb = ExternalGreyBoxBlock()
         m.egb.set_external_model(ex_model)
 
@@ -1359,6 +1359,7 @@ class MeasurementOptimizer:
                 additional_options={'max_iter':0, 'output_file': 'console_output',
                                  'linear_solver':'mumps',  'bound_push':1E-10}
 
+            # copy solver options
             for k,v in additional_options.items():
                 solver.config.options[k] = v
             solver.solve(mod, tee=True)
@@ -1388,6 +1389,7 @@ class MeasurementOptimizer:
                 additional_options={'max_iter':0, 'output_file': 'console_output',
                                  'linear_solver':'mumps',  'bound_push':1E-6}
 
+            # copy solver options
             for k,v in additional_options.items():
                 solver.config.options[k] = v
             solver.solve(mod, tee=True)
@@ -1569,9 +1571,9 @@ class MeasurementOptimizer:
         return mod
     
     def extract_store_sol(self, mod, store_name, budget_opt):
-        fim_result = np.zeros((self.n_parameters,self.n_parameters))
-        for i in range(self.n_parameters):
-            for j in range(i,self.n_parameters):
+        fim_result = np.zeros((self.sens_info.n_parameters,self.sens_info.n_parameters))
+        for i in range(self.sens_info.n_parameters):
+            for j in range(i,self.sens_info.n_parameters):
                 fim_result[i,j] = fim_result[j,i] = pyo.value(mod.TotalFIM[i,j])
                 
         print(fim_result)  
@@ -1610,7 +1612,7 @@ class MeasurementOptimizer:
         """
         # new_fim is the FIM computed with the given integer solution
         # initialize new_fim
-        new_fim = np.zeros((self.n_parameters,self.n_parameters))
+        new_fim = np.zeros((self.sens_info.n_parameters,self.sens_info.n_parameters))
 
         if self.optimize_print_level >= 3:
             # print to see how many non-zero solutions are in the solution
@@ -1644,6 +1646,9 @@ class MeasurementOptimizer:
                         else:
                             summi += m.cov_y[j,i].value*self.unit_fims[i*self.num_measure_dynamic_flatten+j][a][b]
                 return summi
+            # check error. we only compute upper diagonal
+            else:
+                raise ValueError("Only the upper diagonal matrix can be used for computation. ")
                 
         # compute each element in FIM
         # loop over number of parameters
@@ -1667,13 +1672,13 @@ class MeasurementOptimizer:
             if self.optimize_print_level >= 1:
                 print("warmstart determinant is too small. Use an identity matrix as FIM")
             # update FIM used 
-            new_fim = np.zeros((self.n_parameters,self.n_parameters))
+            new_fim = np.zeros((self.sens_info.n_parameters,self.sens_info.n_parameters))
             # diagonal elements are 0.01
-            for i in range(self.n_parameters):
+            for i in range(self.sens_info.n_parameters):
                 new_fim[i,i] = 0.01 
 
         # add the FIM small diagonal element to FIM to be consistent
-        for i in range(self.n_parameters):
+        for i in range(self.sens_info.n_parameters):
             new_fim[i][i] += mod.fim_diagonal_small_element
 
         # initialize grey-box module
@@ -1757,7 +1762,7 @@ class MeasurementOptimizer:
         """
 
         # compute Atomic FIM
-        self.fim_computation()
+        self.assemble_unit_fims()
 
         # evaluate fim in the CVXPY framework
         def eval_fim(y):
