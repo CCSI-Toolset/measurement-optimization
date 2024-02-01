@@ -1437,21 +1437,76 @@ class MeasurementOptimizer:
 
         return mod
     
-    def optimizer(self, budget_opt, initial_option, update_model=False, store_name=None):
+    def optimizer(self, budget_opt, initial_option, 
+                        update_model=False,  
+                        mixed_integer=False, obj=ObjectiveLib.A, 
+                        mix_obj = False, alpha=1, fixed_nlp=False,
+                        fix=False, upper_diagonal_only=False,
+                        num_dynamic_t_name = None, 
+                        budget=100, 
+                        init_cov_y=None, initial_fim=None,
+                        dynamic_install_initial = None,
+                        total_measure_initial = 1, 
+                        static_dynamic_pair=None,
+                        time_interval_all_dynamic=False, 
+                        total_manual_num_init=10, 
+                        cost_initial = 100, 
+                        fim_diagonal_small_element=0, 
+                        print_level = 0):
         """
         Initialize, formulate, and solve the MO problem. 
 
         Arguments 
         ---------
-        budget_opt: budget 
-        initial_option: choice of using which initial file
+        :param budget_opt: budget 
+        :param initial_option: choice of using which initial file
             # choose what solutions to initialize from: 
             # minlp_D: initialize with minlp_D solutions
             # milp_A: initialize with milp_A solutions
             # lp_A: iniitalize with lp_A solution 
             # nlp_D: initialize with nlp_D solution
-        update_model: a Pyomo model or None. if given a Pyomo model, only update the budget
-        store_name: if not None, store the solution and FIM in pickle file with the given name
+        :param update_model: a Pyomo model or None. if given a Pyomo model, only update the budget
+        :param mixed_integer: boolean 
+            not relaxing integer decisions
+        :param obj: Enum
+            "A" or "D" optimality, use trace or determinant of FIM 
+        :param mix_obj: boolean 
+            if True, the objective function is a weighted sum of A- and D-optimality (trace and determinant)
+        :param alpha: float
+            range [0,1], weight of mix_obj. if 1, it is A-optimality. if 0, it is D-optimality 
+        :param fixed_nlp: boolean 
+            if True, the problem is formulated as a fixed NLP 
+        :param fix: boolean
+            if solving as a square problem or with DOFs 
+        :param upper_diagonal_only: boolean
+            if using upper_diagonal_only set to define decisions and FIM, or not 
+        :param num_dynamic_t_name: list
+            a list of the exact time points for the dynamic-cost measurements time points 
+        :param budget: integer
+            total budget
+        :param init_cov_y: list of lists
+            initialize decision variables 
+        :param initial_fim: list of lists
+            initialize FIM
+        :param dynamic_install_initial: list
+            initialize if_dynamic_install
+        :param total_measure_initial: integer
+            initialize the total number of measurements chosen
+        :param static_dynamic_pair: list of lists
+            a list of the name of measurements, that are selected as either dynamic or static measurements.
+        :param time_interval_all_dynamic: boolean
+            if True, the minimal time interval applies for all dynamical measurements 
+        :param total_manual_num_init: integer
+            initialize the total number of dynamical timepoints selected 
+        :param cost initial: float
+            initialize the cost 
+        :param fim_diagonal_small_element: float
+            a small number, default to be 0, to be added to FIM diagonal elements for better convergence
+        :param print_level: integer
+            0 (default): no extra printing 
+            1: print to show it is working 
+            2: print for debugging 
+            3: print everything that could help with debugging 
         """
 
         # ==== initialization strategy ==== 
@@ -1536,31 +1591,28 @@ class MeasurementOptimizer:
             
         # initialize FIM with a small element 
         for i in range(4):
-            fim_prior[i][i] += small_element
-
-        # this time is to evaluate model creating time
-        t1 = time.time()
+            fim_prior[i][i] += fim_diagonal_small_element
 
         if not update_model:
             # create model
-            mod = calculator.continuous_optimization(mixed_integer=mip_option, 
-                                obj=objective, 
-                                mix_obj = mix_obj_option, 
-                                alpha = alpha_opt,
-                                fixed_nlp = fixed_nlp_opt,
-                                fix=fix_opt, 
-                                upper_diagonal_only=sparse_opt, 
-                                num_dynamic_t_name = num_dynamic_time, 
+            mod = self._continuous_optimization(mixed_integer=mixed_integer, 
+                                obj=obj, 
+                                mix_obj = mix_obj, 
+                                alpha = alpha,
+                                fixed_nlp = fixed_nlp,
+                                fix=fix, 
+                                upper_diagonal_only=upper_diagonal_only, 
+                                num_dynamic_t_name = num_dynamic_t_name, 
                                 budget=budget_opt,
                                 init_cov_y= init_cov_y,
                                 initial_fim = fim_prior,
                                 dynamic_install_initial = dynamic_install_init, 
                                 total_measure_initial = total_measure_init, 
-                                static_dynamic_pair=static_dynamic,
-                                time_interval_all_dynamic = time_interval_for_all,
+                                static_dynamic_pair=static_dynamic_pair,
+                                time_interval_all_dynamic = time_interval_all_dynamic,
                                 total_manual_num_init=total_manual_init,
                                 cost_initial = cost_init, 
-                                FIM_diagonal_small_element=small_element,
+                                fim_diagonal_small_element=fim_diagonal_small_element,
                                 print_level=1)
             
         else:
@@ -1571,6 +1623,11 @@ class MeasurementOptimizer:
         return mod
     
     def extract_store_sol(self, mod, store_name, budget_opt):
+        """
+        Extract the solution from pyomo model, store in two pickles. 
+        First pickle: 
+        :param store_name: if not None, store the solution and FIM in pickle file with the given name
+        """
         fim_result = np.zeros((self.sens_info.n_parameters,self.sens_info.n_parameters))
         for i in range(self.sens_info.n_parameters):
             for j in range(i,self.sens_info.n_parameters):

@@ -113,7 +113,7 @@ class LogDetModel(ExternalGreyBoxModel):
             # loop over parameters from current parameter to end
             for j in range(i, self.n_parameters):
                 # flatten (i,j)
-                ele_to_order[(i,j)], ele_to_order[(j,i)] = count, count 
+                ele_to_order[(i,j)] = count, count 
                 # this tuple is the position of this input in the FIM
                 str_name = (i,j)
                 
@@ -192,8 +192,11 @@ class LogDetModel(ExternalGreyBoxModel):
         # Alternately, ele_to_order only includes the upper triangle. 
         # Expand here to be the full matrix.  
         for i in range(self.n_parameters):
-            for k in range(self.n_parameters):                
-                M[i,k] = self._input_values[self.ele_to_order[(i,k)]]
+            for k in range(self.n_parameters): 
+                #  get symmetry part. 
+                # only have upper triangle, so the smaller index is the row number
+                row_number, col_number = min(i,k), max(i,k)
+                M[i,k] = self._input_values[self.ele_to_order[(row_number,col_number)]]
 
         return M
 
@@ -206,7 +209,7 @@ class LogDetModel(ExternalGreyBoxModel):
         A sparse matrix, containing the first order gradient of the OBJ, in the shape [1,N_input]
         where N_input is the No. of off-diagonal elements//2 + Np
         """
-        if self._use_exact_derivatives:
+        if self._use_exact_derivatives:  
             M = self._extract_and_assemble_fim()
 
             # compute pseudo inverse to be more numerically stable
@@ -223,7 +226,7 @@ class LogDetModel(ExternalGreyBoxModel):
             for i in range(self.n_parameters):
                 # loop over parameters from current parameter to end
                 for j in range(i, self.n_parameters):
-                    order = self.ele_to_order[i,j]
+                    order = self.ele_to_order[(i,j)]
                     # diagonal elements. See Eq. 16 in paper for explanation
                     if i==j: 
                         row[order], col[order], data[order] = (0,order, Minv[i,j])
