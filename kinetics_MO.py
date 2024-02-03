@@ -113,11 +113,6 @@ calculator = MeasurementOptimizer(jac_info, # SensitivityData object
 calculator.fim_computation()
 
 ### MO optimization framework 
-# extract number of SCM, DCM, and total number of measurements
-num_static = len(static_ind)
-num_dynamic  = len(dynamic_ind)
-# this num_total is the summation of number of SCM choices, and number of timepoints in DCMs
-num_total = num_static + num_dynamic*Nt
 
 # optimization options
 mip_option = True

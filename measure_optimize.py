@@ -117,7 +117,6 @@ class SensitivityData:
         # store the original Jacobian matrix in object
         self.jacobian = jacobian_array
 
-
     def get_jac_list(self, static_measurement_idx, dynamic_measurement_idx):
         """Combine Jacobian Q for each measurement to be in one Jacobian Q.
         Through _split_jacobian we get a list of lists for Jacobian Q, 
@@ -781,7 +780,7 @@ class MeasurementOptimizer:
 
     
 
-    def continuous_optimization(self, mixed_integer=False, obj=ObjectiveLib.A, 
+    def _continuous_optimization(self, mixed_integer=False, obj=ObjectiveLib.A, 
                                 mix_obj = False, alpha=1, fixed_nlp=False,
                                 fix=False, upper_diagonal_only=False,
                                 num_dynamic_t_name = None, 
@@ -1438,6 +1437,7 @@ class MeasurementOptimizer:
         return mod
     
     def optimizer(self, budget_opt, initial_option, 
+                        initial_solution,
                         update_model=False,  
                         mixed_integer=False, obj=ObjectiveLib.A, 
                         mix_obj = False, alpha=1, fixed_nlp=False,
@@ -1455,6 +1455,9 @@ class MeasurementOptimizer:
                         print_level = 0):
         """
         Initialize, formulate, and solve the MO problem. 
+        This function includes two steps: 
+        1) Create the optimization problem (Pyomo model)
+        2) Initialilze the model
 
         Arguments 
         ---------
@@ -1509,6 +1512,36 @@ class MeasurementOptimizer:
             3: print everything that could help with debugging 
         """
 
+        # ==== Createe the model ====
+        if not update_model:
+            # create model
+            mod = self._continuous_optimization(mixed_integer=mixed_integer, 
+                                obj=obj, 
+                                mix_obj = mix_obj, 
+                                alpha = alpha,
+                                fixed_nlp = fixed_nlp,
+                                fix=fix, 
+                                upper_diagonal_only=upper_diagonal_only, 
+                                num_dynamic_t_name = num_dynamic_t_name, 
+                                budget=budget,
+                                #dynamic_install_initial = dynamic_install_init, 
+                                #total_measure_initial = total_measure_init, 
+                                static_dynamic_pair=static_dynamic_pair,
+                                time_interval_all_dynamic = time_interval_all_dynamic,
+                                #total_manual_num_init=total_manual_init,
+                                #cost_initial = cost_init, 
+                                fim_diagonal_small_element=fim_diagonal_small_element,
+                                print_level=1)
+            
+        else:
+            update_model.budget = budget
+
+        init_cov_y = self._find_initial_point(initial_solution)
+
+        mod = self.customized_warmstart(init_sol = init_cov_y)
+
+
+
         # ==== initialization strategy ==== 
         if initial_option == "milp_A":
             curr_results = np.linspace(1000, 5000, 11)
@@ -1557,8 +1590,8 @@ class MeasurementOptimizer:
             init_cov_y = pickle.load(f)
 
         # Round possible float solution to be integer 
-        for i in range(num_total):
-            for j in range(num_total):
+        for i in range(self.num_measure_dynamic_flatten):
+            for j in range(self.num_measure_dynamic_flatten):
                 if init_cov_y[i][j] > 0.99:
                     init_cov_y[i][j] = int(1)
                 else:
@@ -1571,16 +1604,16 @@ class MeasurementOptimizer:
 
         # round solutions
         # if floating solutions, if value > 0.01, we count it as an integer decision that is 1 or positive
-        for i in range(num_static,num_total):
+        for i in range(self.n_static_measurements,self.num_measure_dynamic_flatten):
             if init_cov_y[i][i] > 0.01:
                 total_manual_init += 1 
                 
                 # identify which DCM this timepoint belongs to, turn the installation flag to be positive 
-                i_pos = int((i-num_static)/Nt)
+                i_pos = int((i-self.n_static_measurements)/self.sens_info.Nt)
                 dynamic_install_init[i_pos] = 1
                 
         # compute total measurements number, this is for integer cut
-        total_measure_init = sum(init_cov_y[i][i] for i in range(num_total))
+        total_measure_init = sum(init_cov_y[i][i] for i in range(self.num_measure_dynamic_flatten))
                 
         # initialize cost, this cost is calculated by the given initial solution
         cost_init = sum(dynamic_install_init)*200+total_manual_init*400 + (init_cov_y[0][0]+init_cov_y[1][1]+init_cov_y[2][2])*2000
@@ -1590,33 +1623,10 @@ class MeasurementOptimizer:
             fim_prior = pickle.load(f)
             
         # initialize FIM with a small element 
-        for i in range(4):
+        for i in range(self.n_parameters):
             fim_prior[i][i] += fim_diagonal_small_element
 
-        if not update_model:
-            # create model
-            mod = self._continuous_optimization(mixed_integer=mixed_integer, 
-                                obj=obj, 
-                                mix_obj = mix_obj, 
-                                alpha = alpha,
-                                fixed_nlp = fixed_nlp,
-                                fix=fix, 
-                                upper_diagonal_only=upper_diagonal_only, 
-                                num_dynamic_t_name = num_dynamic_t_name, 
-                                budget=budget_opt,
-                                init_cov_y= init_cov_y,
-                                initial_fim = fim_prior,
-                                dynamic_install_initial = dynamic_install_init, 
-                                total_measure_initial = total_measure_init, 
-                                static_dynamic_pair=static_dynamic_pair,
-                                time_interval_all_dynamic = time_interval_all_dynamic,
-                                total_manual_num_init=total_manual_init,
-                                cost_initial = cost_init, 
-                                fim_diagonal_small_element=fim_diagonal_small_element,
-                                print_level=1)
-            
-        else:
-            update_model.budget = budget_opt
+        
 
         
 
@@ -1625,7 +1635,11 @@ class MeasurementOptimizer:
     def extract_store_sol(self, mod, store_name, budget_opt):
         """
         Extract the solution from pyomo model, store in two pickles. 
-        First pickle: 
+        First data file (store_name+"_fim_"+budget_opt): pickle, a Nm*Nm numpy array that is the solution of measurements 
+        Second data file (store_name+"_fim_"+budget_opt): pickle, a Np*Np numpy array that is the FIM 
+
+        Arguments
+        ---------
         :param store_name: if not None, store the solution and FIM in pickle file with the given name
         """
         fim_result = np.zeros((self.sens_info.n_parameters,self.sens_info.n_parameters))
@@ -1638,7 +1652,7 @@ class MeasurementOptimizer:
         print('det:', np.linalg.det(fim_result))
         print(np.linalg.eigvals(fim_result))
 
-        ans_y, sol_y = calculator.extract_solutions(mod)
+        ans_y, _ = self.extract_solutions(mod)
         print('pyomo calculated cost:', pyo.value(mod.cost))
         print("if install dynamic measurements:")
         print(pyo.value(mod.if_install_dynamic[3]))
