@@ -10,10 +10,12 @@ import time
 
 # number of time points for DCM
 Nt =110
-# maximum manual measurement number
+# maximum manual measurement number for each measurement
 max_manual_num = 5 
 # minimal measurement interval 
 min_interval_num = 10
+# maximum manual measurement number for all measurements
+total_max_manual_num = 20
 # index of columns of SCM and DCM in Q
 static_ind = [0,1,2,3,4,5,6,7,8,9,10]
 dynamic_ind = [11,12,13,14,15]
@@ -53,8 +55,8 @@ static_cost = [1000, #ads.gas_inlet.F (0)
                 1000, #ads.T19 (8)
                 1000, #ads.T23 (9)
                 1000, #ads.T28 (10)
-                7000,
-                7000] 
+                7000, #ads.z 
+                7000] #des.z
 
 # define static cost (installaion) for dynamic-cost
 static_cost.extend([100, 100, 500, 500, 500])
@@ -71,133 +73,38 @@ max_manual = [max_manual_num]*num_total_measure
 # it is extended to the same length as measurements, so it can be one column of DataFrame
 min_time_interval = [min_interval_num]*num_total_measure
 
-measure_info = pd.DataFrame({
-        "name": all_names_strategy3,  # measurement string names
-        "Q_index": all_ind, # measurement index in Q
-        "static_cost": static_cost,  # static costs
-        "dynamic_cost": dynamic_cost,  # dynamic costs
-        "min_time_interval": min_time_interval, # minimal time interval between two timepoints
-        "max_manual_number": max_manual  # maximum number of timepoints 
-        })
+## define MeasurementData object 
+measure_info = MeasurementData(
+    all_names_strategy3, # name string 
+    all_ind, # jac_index: measurement index in Q
+    static_cost, # static costs
+    dynamic_cost, # dynamic costs
+    min_interval_num, # minimal time interval between two timepoints
+    max_manual, # maximum number of timepoints for each measurement
+    total_max_manual_num, # maximum number of timepoints for all measurement
+)
 
+# create data object to pre-compute Qs
+# read jacobian from the source csv 
+# Nt is the number of time points for each measurement
+jac_info = SensitivityData('./RotaryBed/Q3_scale.csv', Nt)
+static_measurement_index = [0,1,2,4,5,6,8,9,10,3,7] # the index of CA, CB, CC in the jacobian array, considered as SCM
+dynamic_measurement_index = [3,7,11,12,13] # the index of CA, CB, CC in the jacobian array, also considered as DCM
+jac_info.get_jac_list(static_measurement_index, # the index of SCMs in the jacobian array
+                    dynamic_measurement_index) # the index of DCMs in the jacobian array
 
-### Calculate FIM
-dataObject = DataProcess()
-dataObject.read_jacobian('./RotaryBed/Q'+str(Nt)+'_scale.csv')
-Q = dataObject.get_Q_list(
-                        [0,1,2,4,5,6,8,9,10,3,7],  # the index of static-cost measures in the jacobian array
-                        [3,7,11,12,13],  # the index of dynamic-cost measures in the jacobian array
-                        Nt) # the number of time points for each measurement
+# use MeasurementOptimizer to pre-compute the unit FIMs
+calculator = MeasurementOptimizer(jac_info, # SensitivityData object
+                                  measure_info, # MeasurementData object
+                                  error_cov=error_mat, # error covariance matrix 
+                                  error_opt=CovarianceStructure.measure_correlation  # error covariance options 
+                                  ) 
 
-# define with the error structure
-calculator = MeasurementOptimizer(Q, measure_info, error_cov = error_mat,  
-                                  error_opt=CovarianceStructure.measure_correlation, verbose=True)
-
-# calculate unit FIMs
-fim_expect = calculator.fim_computation()
+# calculate a list of unit FIMs 
+calculator.fim_computation()
 
 
 ## MO optimization 
-# extract number of SCM, DCM, and total number of measurements
-num_static = len(static_ind)
-num_dynamic  = len(dynamic_ind)
-# this num_total is the summation of number of SCM choices, and number of timepoints in DCMs
-num_total = num_static + num_dynamic*Nt
-
-
-# initialize first iteration 
-budget_opt = 15000
-
-# choose what solutions to initialize with 
-#initial_option = "minlp_D" # initialize with minlp_D solutions
-initial_option = "milp_A" # initialize with milp_A solutions
-# initial_option = "lp_A" # iniitalize with lp_A solution 
-# initialize_option = "nlp_D" # initialize with nlp_D solution
-
-
-# ==== initialization strategy ==== 
-if initial_option == "milp_A":
-    file_name_pre, file_name_end = './rotary_results/Apr17_A_mip_', ''
-    file_name_pre_fim = './rotary_results/Apr17_FIM_A_mip_'
-
-elif initial_option == "minlp_D":
-    file_name_pre, file_name_end = './rotary_results/Dec7_', '_d_mip'
-    file_name_pre_fim =  './rotary_results/Dec7_fim_', 'd_mip'
-
-elif initial_option == "lp_A":
-    file_name_pre, file_name_end = './rotary_results/May12_', '_a'
-    file_name_pre_fim = './rotary_results/May12_fim_', "_a"
-
-elif initial_option == "nlp_D":
-    file_name_pre, file_name_end = './rotary_results/May10_', '_d'
-    file_name_pre_fim =  './rotary_results/May10_fim_', '_d'
-
-# current results is a range containing the budgets at where the problems are solved 
-curr_results = np.linspace(1000, 26000, 26)
-curr_results = set([int(curr_results[i]) for i in range(len(curr_results))])
-## find if there has been a original solution for the current budget
-if budget_opt in curr_results: # use an existed initial solutioon
-    curr_budget = budget_opt
-
-else:
-    # if not, find the closest budget, and use this as the initial point
-    curr_min_diff = float("inf") # current minimal budget difference 
-    curr_budget = 25000 # starting point
-
-     # find the existing budget that minimize curr_min_diff
-    for i in curr_results:
-        # if we found an existing budget that is closer to the given budget
-        if abs(i-budget_opt) < curr_min_diff:
-            curr_min_diff = abs(i-budget_opt)
-            curr_budget = i
-
-    print("using solution at", curr_budget, " too initialize")
-
-# assign solution file names, and FIM file names
-y_init_file = file_name_pre+str(curr_budget)+file_name_end
-fim_init_file = file_name_pre_fim+str(curr_budget)+file_name_end
-
-# read y 
-with open(y_init_file, 'rb') as f:
-    init_cov_y = pickle.load(f)
-
-# Round possible float solution to be integer 
-for i in range(num_total):
-    for j in range(num_total):
-        if init_cov_y[i][j] > 0.99:
-            init_cov_y[i][j] = int(1)
-        else:
-            init_cov_y[i][j] = int(0)
-            
-# initialize total manual number
-total_manual_init = 0 
-# initialize the DCM installation flags
-dynamic_install_init = [0,0,0,0,0]
-
-# round solutions
-# if floating solutions, if value > 0.01, we count it as an integer decision that is 1 or positive
-for i in range(num_static,num_total):
-    if init_cov_y[i][i] > 0.01:
-        total_manual_init += 1 
-        # identify which DCM this timepoint belongs to, turn the installation flag to be positive 
-        i_pos = int((i-num_static)/Nt)
-        dynamic_install_init[i_pos] = 1
-        
-# compute total measurements number, this is for integer cut
-total_measure_init = sum(init_cov_y[i][i] for i in range(num_total))
-
-# initialize cost, this cost is calculated by the given initial solution
-cost_init = budget_opt
-
-# read FIM, initialize FIM and logdet
-with open(fim_init_file, 'rb') as f:
-    fim_prior = pickle.load(f)
-    print(fim_prior)
-
-# initialize FIM with a small element 
-for i in range(5):
-    fim_prior[i][i] += 0.0001
-
 mip_option = True
 objective = ObjectiveLib.D
 fixed_nlp_opt = False
@@ -206,8 +113,8 @@ alpha_opt = 0.9
 
 sparse_opt = True
 fix_opt = False
-
-manual_num = 20
+small_element = 0.0001 # the small element added to the diagonal of FIM
+file_store_name = "MINLP_"
 
 num_dynamic_time = np.linspace(2,220,Nt)
 
@@ -219,68 +126,94 @@ dynamic_time_dict = {}
 for i, tim in enumerate(num_dynamic_time):
     dynamic_time_dict[i] = tim 
 
+# give range of budgets for this case
+budget_ranges = np.linspace(1000, 26000, 26)
+# give a trial ranges for a test; we use the first 3 budgets in budget_ranges
+trial_budget_ranges = budget_ranges[:3]
+# initialize with A-opt. MILP solutions
+# choose what solutions to initialize from: 
+# minlp_D: initialize with minlp_D solutions
+# milp_A: initialize with milp_A solutions
+# lp_A: iniitalize with lp_A solution 
+# nlp_D: initialize with nlp_D solution
+initializer_option = "milp_A"
+
+# budgets for the current results
+curr_results = np.linspace(1000, 26000, 26)
+
+# ==== initialization strategy ==== 
+# according to the initializer option, we provide different sets of initialization files 
+if initializer_option == "milp_A":
+    # initial solution file path and name 
+    file_name_pre, file_name_end = './rotary_results/Apr17_A_mip_', ''
+    
+elif initializer_option == "minlp_D":
+    # initial solution file path and name 
+    file_name_pre, file_name_end = './rotary_results/Dec7_', '_d_mip'
+
+elif initializer_option == "lp_A":
+    # initial solution file path and name 
+    file_name_pre, file_name_end = './rotary_results/May12_', '_a'
+
+elif initializer_option == "nlp_D":
+    file_name_pre, file_name_end = './rotary_results/May10_', '_d'
+
+
+# initialize the initial solution dict. key: budget. value: initial solution file name 
+# this initialization dictionary provides a more organized input format for initialization
+initial_solution = {}
+# loop over budget
+for b in curr_results:
+    initial_solution[b] = file_name_pre + str(b) + file_name_end
+
+
+# ===== run a test for a few budgets =====
+    
+# use a starting budget to create the model 
+start_budget = trial_budget_ranges[0]
+# timestamp for creating pyomo model 
 t1 = time.time()
-mod = calculator.continuous_optimization(mixed_integer=mip_option, 
-                      obj=objective, 
-                    mix_obj = mix_obj_option, alpha = alpha_opt,fixed_nlp = fixed_nlp_opt,
-                    fix=fix_opt, 
-                    upper_diagonal_only=sparse_opt, 
-                    num_dynamic_t_name = num_dynamic_time, 
-                    budget=budget_opt,
-                    init_cov_y= init_cov_y,
-                    initial_fim = fim_prior,
-                    dynamic_install_initial = dynamic_install_init, 
-                    total_measure_initial = total_measure_init, 
-                    static_dynamic_pair=static_dynamic,
-                    time_interval_all_dynamic = time_interval_for_all,
-                    total_manual_num_init=total_manual_init,
-                                         cost_initial = cost_init, 
-                                        FIM_diagonal_small_element=0.0001,
-                                        print_level=1)
+# call the optimizer function to formulate the model and solve for the first time 
+# optimizer method will 1) create the model and save as self.mod 2) initialize the model 
+calculator.optimizer(mixed_integer=mip_option, # if relaxing integer decisions
+                    obj=objective,  # objective function options, A or D
+                    mix_obj = mix_obj_option,  # if mixing A- and D-optimality to be the OF
+                    alpha = alpha_opt, # the weight of A-optimality if using mixed obj
+                    fixed_nlp = fixed_nlp_opt, # if it is a fixed NLP problem
+                    fix=fix_opt,  # if it is a squared problem
+                    upper_diagonal_only=sparse_opt, # if only defining upper triangle part for symmetric matrix
+                    num_dynamic_t_name = num_dynamic_time, # number of time points of DCMs
+                    static_dynamic_pair=static_dynamic, # if one measurement can be both SCM and DCM
+                    time_interval_all_dynamic = time_interval_for_all, # time interval for time points of DCMs
+                    FIM_diagonal_small_element=small_element, # a small element added for FIM diagonals to avoid ill-conditioning
+                    print_level=1) # print level for optimization part 
 
-                    
+# timestamp for solving pyomo model
 t2 = time.time()
-mod = calculator.solve(mod, mip_option=mip_option, objective = objective)
+calculator.solve(mip_option=mip_option, objective = objective)
+# timestamp for finishing 
 t3 = time.time()
-
 print("model and solver wall clock time:", t3-t1)
 print("solver wall clock time:", t3-t2)
+calculator.extract_store_sol(start_budget, file_store_name)
 
-fim_result = np.zeros((5,5))
-for i in range(5):
-    for j in range(i,5):
-        fim_result[i,j] = fim_result[j,i] = pyo.value(mod.TotalFIM[i,j])
-        
-print(fim_result)  
-print('trace:', np.trace(fim_result))
-print('det:', np.linalg.det(fim_result))
-print(np.linalg.eigvals(fim_result))
+# loop over all budgets for a test
+for b in trial_budget_ranges[1:]:
+    print("====Solving with budget:", b, "====")
+    # open the update toggle every time so no need to create model every time
+    calculator.update_budget()
+    # solve the model 
+    calculator.solve(mip_option=mip_option, objective = objective)
+    # extract and select solutions 
+    calculator.extract_store_sol(b, file_store_name)
 
-print("Pyomo OF:", pyo.value(mod.Obj))
-print("Log_det:", np.log(np.linalg.det(fim_result)))
 
-ans_y, sol_y = calculator.extract_solutions(mod)
-for i in range(5):
-    print(all_names_strategy3[i+11])
-    for t in range(len(sol_y[0])):
-        if sol_y[i][t] > 0.95:
-            print(dynamic_time_dict[t])
-#print('pyomo calculated cost:', pyo.value(mod.cost))
-
-#for i in [11,12,13,14,15]:
-#    print(pyo.value(mod.if_install_dynamic[i]))
-    
-store = True
-
-if store:
-    file = open('Dec7_'+str(budget_opt)+'_d_mip', 'wb')
-
-    pickle.dump(ans_y, file)
-
-    file.close()
-    
-    file2 = open('Dec7_fim_'+str(budget_opt)+'_d_mip', 'wb')
-
-    pickle.dump(fim_result, file2)
-
-    file2.close()
+# continue to run the rest of budgets if the test goes well 
+for b in budget_ranges[3:]:
+    print("====Solving with budget:", b, "====")
+    # open the update toggle every time so no need to create model every time
+    calculator.update_budget()
+    # solve the model 
+    calculator.solve(mip_option=mip_option, objective = objective)
+    # extract and select solutions 
+    calculator.extract_store_sol(b, file_store_name)

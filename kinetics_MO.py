@@ -189,18 +189,18 @@ start_budget = trial_budget_ranges[0]
 t1 = time.time()
 # call the optimizer function to formulate the model and solve for the first time 
 # optimizer method will 1) create the model and save as self.mod 2) initialize the model 
-calculator.optimizer(mixed_integer=mip_option, 
-                    obj=objective, 
-                    mix_obj = mix_obj_option, 
-                    alpha = alpha_opt,
-                    fixed_nlp = fixed_nlp_opt,
-                    fix=fix_opt, 
-                    upper_diagonal_only=sparse_opt, 
-                    num_dynamic_t_name = num_dynamic_time, 
-                    static_dynamic_pair=static_dynamic,
-                    time_interval_all_dynamic = time_interval_for_all,
-                    FIM_diagonal_small_element=small_element,
-                    print_level=1)
+calculator.optimizer(mixed_integer=mip_option, # if relaxing integer decisions
+                    obj=objective,  # objective function options, A or D
+                    mix_obj = mix_obj_option,  # if mixing A- and D-optimality to be the OF
+                    alpha = alpha_opt, # the weight of A-optimality if using mixed obj
+                    fixed_nlp = fixed_nlp_opt, # if it is a fixed NLP problem
+                    fix=fix_opt,  # if it is a squared problem
+                    upper_diagonal_only=sparse_opt, # if only defining upper triangle part for symmetric matrix
+                    num_dynamic_t_name = num_dynamic_time, # number of time points of DCMs
+                    static_dynamic_pair=static_dynamic, # if one measurement can be both SCM and DCM
+                    time_interval_all_dynamic = time_interval_for_all, # time interval for time points of DCMs
+                    FIM_diagonal_small_element=small_element, # a small element added for FIM diagonals to avoid ill-conditioning
+                    print_level=1) # print level for optimization part 
 # timestamp for solving pyomo model
 t2 = time.time()
 calculator.solve(mip_option=mip_option, objective = objective)
