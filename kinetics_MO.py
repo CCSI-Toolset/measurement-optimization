@@ -136,10 +136,10 @@ dynamic_time_dict = {}
 for i, tim in enumerate(num_dynamic_time[1:]):
     dynamic_time_dict[i] = np.round(tim, decimals=2)
 
-# give a trial ranges for a test 
-trial_budget_ranges = [1000, 1400, 1800]
 # give range of budgets for this case
 budget_ranges = np.linspace(1000,5000,11)
+# give a trial ranges for a test; we use the first 3 budgets in budget_ranges
+trial_budget_ranges = budget_ranges[:3]
 # initialize with A-opt. MILP solutions
 # choose what solutions to initialize from: 
 # minlp_D: initialize with minlp_D solutions
@@ -183,9 +183,10 @@ for b in curr_results:
 
 # ===== run a test for a few budgets =====
 
+# use a starting budget to create the model 
+start_budget = trial_budget_ranges[0]
 # timestamp for creating pyomo model 
 t1 = time.time()
-
 # call the optimizer function to formulate the model and solve for the first time 
 # optimizer method will 1) create the model and save as self.mod 2) initialize the model 
 calculator.optimizer(mixed_integer=mip_option, 
@@ -200,29 +201,33 @@ calculator.optimizer(mixed_integer=mip_option,
                     time_interval_all_dynamic = time_interval_for_all,
                     FIM_diagonal_small_element=small_element,
                     print_level=1)
-
 # timestamp for solving pyomo model
 t2 = time.time()
 calculator.solve(mip_option=mip_option, objective = objective)
-
 # timestamp for finishing 
 t3 = time.time()
-
 print("model and solver wall clock time:", t3-t1)
 print("solver wall clock time:", t3-t2)
+calculator.extract_store_sol(start_budget, file_store_name)
 
-calculator.extract_store_sol(budget_opt, file_store_name)
-
-# loop over all budgets
-for b in budget_ranges:
+# loop over all budgets for a test
+for b in trial_budget_ranges[1:]:
     print("====Solving with budget:", b, "====")
     # open the update toggle every time so no need to create model every time
     calculator.update_budget()
-
+    # solve the model 
     calculator.solve(mip_option=mip_option, objective = objective)
-
+    # extract and select solutions 
     calculator.extract_store_sol(b, file_store_name)
 
 
-
+# continue to run the rest of budgets if the test goes well 
+for b in budget_ranges[3:]:
+    print("====Solving with budget:", b, "====")
+    # open the update toggle every time so no need to create model every time
+    calculator.update_budget()
+    # solve the model 
+    calculator.solve(mip_option=mip_option, objective = objective)
+    # extract and select solutions 
+    calculator.extract_store_sol(b, file_store_name)
 
