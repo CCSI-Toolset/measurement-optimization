@@ -5,6 +5,7 @@ Measurement optimization tool
 import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
+from pyomo.opt import SolverStatus, TerminationCondition
 from greybox_generalize import LogDetModel
 from pyomo.contrib.pynumero.interfaces.external_grey_box import ExternalGreyBoxModel, ExternalGreyBoxBlock
 from enum import Enum
@@ -1435,11 +1436,23 @@ class MeasurementOptimizer:
                 },
             )
 
-        return self.mod
+        # check solver status and report 
+        # if convergted to optimal solution and feasible 
+        if (results.solver.status == SolverStatus.ok) and (results.solver.termination_condition == TerminationCondition.optimal):
+            if self.optimize_print_level >= 2: # print level is higher 
+                print("The problem is solved optimal and feasible. ")
+        # if get infeasible status
+        elif (results.solver.termination_condition == TerminationCondition.infeasible):
+            if self.optimize_print_level >= 1: # print level is lower to warn
+                print("The problem is solved to infeasible point. ")
+        # if there is other solver status 
+        else:
+            if self.optimize_print_level >= 1:
+                print("Not converged. Solver status:", results.solver.status)
+
     
-    def optimizer(self, budget_opt, initial_option, 
+    def optimizer(self, budget_opt, 
                         initial_solution,
-                        update_model=False,  
                         mixed_integer=False, obj=ObjectiveLib.A, 
                         mix_obj = False, alpha=1, fixed_nlp=False,
                         fix=False, upper_diagonal_only=False,
@@ -1464,15 +1477,8 @@ class MeasurementOptimizer:
         Arguments 
         ---------
         :param budget_opt: budget 
-        :param initial_option: choice of using which initial file
-            # choose what solutions to initialize from: 
-            # minlp_D: initialize with minlp_D solutions
-            # milp_A: initialize with milp_A solutions
-            # lp_A: iniitalize with lp_A solution 
-            # nlp_D: initialize with nlp_D solution
         :param initial_solution: a dictionary, key: budget, value: initial solution pickle file name 
             this option stores the available initial solutions with their budgets
-        :param update_model: a Pyomo model or None. if given a Pyomo model, only update the budget
         :param mixed_integer: boolean 
             not relaxing integer decisions
         :param obj: Enum
@@ -1517,39 +1523,55 @@ class MeasurementOptimizer:
         """
 
         # ==== Create the model ====
-        if not update_model:
-            # create model and save model to the object
-            self._continuous_optimization(
-                                mixed_integer=mixed_integer, 
-                                obj=obj, 
-                                mix_obj = mix_obj, 
-                                alpha = alpha,
-                                fixed_nlp = fixed_nlp,
-                                fix=fix, 
-                                upper_diagonal_only=upper_diagonal_only, 
-                                num_dynamic_t_name = num_dynamic_t_name, 
-                                budget=budget,
-                                static_dynamic_pair=static_dynamic_pair,
-                                time_interval_all_dynamic = time_interval_all_dynamic,
-                                fim_diagonal_small_element=fim_diagonal_small_element,
-                                print_level=1)
+        # create model and save model to the object
+        self._continuous_optimization(
+                            mixed_integer=mixed_integer, 
+                            obj=obj, 
+                            mix_obj = mix_obj, 
+                            alpha = alpha,
+                            fixed_nlp = fixed_nlp,
+                            fix=fix, 
+                            upper_diagonal_only=upper_diagonal_only, 
+                            num_dynamic_t_name = num_dynamic_t_name, 
+                            budget=budget_opt,
+                            init_cov_y=init_cov_y, initial_fim=initial_fim,
+                            dynamic_install_initial = dynamic_install_initial,
+                            total_measure_initial = total_measure_initial, 
+                            static_dynamic_pair=static_dynamic_pair,
+                            time_interval_all_dynamic = time_interval_all_dynamic,
+                            total_manual_num_init=total_manual_num_init, 
+                            cost_initial = cost_initial,
+                            fim_diagonal_small_element=fim_diagonal_small_element,
+                            print_level=print_level)
             
-        else:
-            # there is already a model in the object, change the budget 
-            self.mod.budget = budget
 
+        # store the initialization dictionary 
+        self.curr_res_list = initial_solution # dictionary that stores budget: solution file name
         # ==== Initialize the model ====   
         # locate the binary solution file according to the new budget 
-        self._locate_initial_file(budget, # new budget 
-                                  curr_res_list=initial_solution # dictionary that stores budget: solution file name
-                                  )
+        initial_file_name = self._locate_initial_file(budget)
         # initialize the model with the binary decision variables
-        self._initialize_binary(initial_solution)
+        self._initialize_binary(initial_file_name)
 
         # warmstart function initializes the model with all the binary decisions values stored in the model
         self.customized_warmstart()
+
+    def update_budget(self, budget_opt):
+
+        self.mod.budget = budget_opt 
+
+        # update the initialization according to the new budget 
+        # locate the binary solution file according to the new budget 
+        initial_file_name = self._locate_initial_file(budget_opt, # new budget 
+                                  )
+        # initialize the model with the binary decision variables
+        self._initialize_binary(initial_file_name)
+
+        # warmstart function initializes the model with all the binary decisions values stored in the model
+        self.customized_warmstart()
+
     
-    def extract_store_sol(self, store_name, budget_opt):
+    def extract_store_sol(self, budget_opt, store_name):
         """
         Extract the solution from pyomo model, store in two pickles. 
         First data file (store_name+"_fim_"+budget_opt): pickle, a Nm*Nm numpy array that is the solution of measurements 
@@ -1562,17 +1584,17 @@ class MeasurementOptimizer:
         fim_result = np.zeros((self.sens_info.n_parameters,self.sens_info.n_parameters))
         for i in range(self.sens_info.n_parameters):
             for j in range(i,self.sens_info.n_parameters):
-                fim_result[i,j] = fim_result[j,i] = pyo.value(mod.TotalFIM[i,j])
+                fim_result[i,j] = fim_result[j,i] = pyo.value(self.mod.TotalFIM[i,j])
                 
         print(fim_result)  
         print('trace:', np.trace(fim_result))
         print('det:', np.linalg.det(fim_result))
         print(np.linalg.eigvals(fim_result))
 
-        ans_y, _ = self.extract_solutions(mod)
-        print('pyomo calculated cost:', pyo.value(mod.cost))
+        ans_y, _ = self.extract_solutions(self.mod)
+        print('pyomo calculated cost:', pyo.value(self.mod.cost))
         print("if install dynamic measurements:")
-        print(pyo.value(mod.if_install_dynamic[3]))
+        print(pyo.value(self.mod.if_install_dynamic[3]))
 
         if store_name:
 
@@ -1584,21 +1606,21 @@ class MeasurementOptimizer:
             pickle.dump(fim_result, file2)
             file2.close()
     
-    def _locate_initial_file(self, budget, curr_res_list):
+    def _locate_initial_file(self, budget):
 
         
 
         ## find if there has been a original solution for the current budget
-        if budget in curr_res_list: # use an existed initial solutioon
-            y_init_file = curr_res_list[budget]
+        if budget in self.curr_res_list: # use an existed initial solutioon
+            y_init_file = self.curr_res_list[budget]
 
         else:
             # if not, find the closest budget, and use this as the initial point
             curr_min_diff = np.inf # current minimal budget difference 
-            curr_budget = max(list(curr_res_list.keys())) # starting point
+            curr_budget = max(list(self.curr_res_list.keys())) # starting point
             
             # find the existing budget that minimize curr_min_diff
-            for i in list(curr_res_list.keys()):
+            for i in list(self.curr_res_list.keys()):
                 # if we found an existing budget that is closer to the given budget
                 if abs(i-budget) < curr_min_diff:
                     curr_min_diff = abs(i-budget)
@@ -1607,7 +1629,7 @@ class MeasurementOptimizer:
             print("using solution at", curr_budget, " too initialize")
 
         # assign solution file names, and FIM file names
-        y_init_file = curr_res_list[curr_budget]
+        y_init_file = self.curr_res_list[curr_budget]
         
         return y_init_file
 

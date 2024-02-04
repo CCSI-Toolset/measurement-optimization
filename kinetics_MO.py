@@ -124,6 +124,7 @@ alpha_opt = 0.9
 sparse_opt = True
 fix_opt = False
 small_element = 0.0001 # the small element added to the diagonal of FIM
+file_store_name = "MINLP_"
 
 num_dynamic_time = np.linspace(0,60,9)
 
@@ -135,9 +136,16 @@ dynamic_time_dict = {}
 for i, tim in enumerate(num_dynamic_time[1:]):
     dynamic_time_dict[i] = np.round(tim, decimals=2)
 
+# give a trial ranges for a test 
+trial_budget_ranges = [1000, 1400, 1800]
 # give range of budgets for this case
 budget_ranges = np.linspace(1000,5000,11)
 # initialize with A-opt. MILP solutions
+# choose what solutions to initialize from: 
+# minlp_D: initialize with minlp_D solutions
+# milp_A: initialize with milp_A solutions
+# lp_A: iniitalize with lp_A solution 
+# nlp_D: initialize with nlp_D solution
 initializer_option = "milp_A"
 
 # ==== initialization strategy ==== 
@@ -167,43 +175,53 @@ elif initializer_option == "nlp_D":
     file_name_pre, file_name_end = './kinetics_results/NLP_', '_d'
 
 # initialize the initial solution dict. key: budget. value: initial solution file name 
+# this initialization dictionary provides a more organized input format for initialization
 initial_solution = {}
 # loop over budget
 for b in curr_results:
     initial_solution[b] = file_name_pre + str(b) + file_name_end
 
+# ===== run a test for a few budgets =====
+
+# timestamp for creating pyomo model 
+t1 = time.time()
 
 # call the optimizer function to formulate the model and solve for the first time 
 # optimizer method will 1) create the model and save as self.mod 2) initialize the model 
 calculator.optimizer(mixed_integer=mip_option, 
-                                obj=objective, 
-                                mix_obj = mix_obj_option, 
-                                alpha = alpha_opt,
-                                fixed_nlp = fixed_nlp_opt,
-                                fix=fix_opt, 
-                                upper_diagonal_only=sparse_opt, 
-                                num_dynamic_t_name = num_dynamic_time, 
-                                static_dynamic_pair=static_dynamic,
-                                time_interval_all_dynamic = time_interval_for_all,
-                                FIM_diagonal_small_element=small_element,
-                                print_level=1)
+                    obj=objective, 
+                    mix_obj = mix_obj_option, 
+                    alpha = alpha_opt,
+                    fixed_nlp = fixed_nlp_opt,
+                    fix=fix_opt, 
+                    upper_diagonal_only=sparse_opt, 
+                    num_dynamic_t_name = num_dynamic_time, 
+                    static_dynamic_pair=static_dynamic,
+                    time_interval_all_dynamic = time_interval_for_all,
+                    FIM_diagonal_small_element=small_element,
+                    print_level=1)
 
+# timestamp for solving pyomo model
 t2 = time.time()
 calculator.solve(mip_option=mip_option, objective = objective)
+
+# timestamp for finishing 
 t3 = time.time()
 
 print("model and solver wall clock time:", t3-t1)
 print("solver wall clock time:", t3-t2)
 
-calculator.extract_store_sol()
+calculator.extract_store_sol(budget_opt, file_store_name)
 
 # loop over all budgets
 for b in budget_ranges:
     print("====Solving with budget:", b, "====")
     # open the update toggle every time so no need to create model every time
-    calculator.update(b, initializer_option, update_model=mod, store_name = "MINLP_result_")
+    calculator.update_budget()
 
     calculator.solve(mip_option=mip_option, objective = objective)
+
+    calculator.extract_store_sol(b, file_store_name)
 
 
 
