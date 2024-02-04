@@ -1235,7 +1235,7 @@ class MeasurementOptimizer:
         elif obj == ObjectiveLib.D: # D-optimality
             def _model_i(b):
                 # build grey-box module
-                self.build_model_external(b, fim_init=fim_initial_dict)
+                self._build_model_external(b, fim_init=fim_initial_dict)
             m.my_block = pyo.Block(rule=_model_i)
 
             if self.print_level >= 2: 
@@ -1276,7 +1276,7 @@ class MeasurementOptimizer:
         self.mod = m 
 
 
-    def build_model_external(self, m, fim_init=None):
+    def _build_model_external(self, m, fim_init=None):
         """Build the model through grey-box module 
 
         Arguments
@@ -1340,19 +1340,17 @@ class MeasurementOptimizer:
     
     def solve(self, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False):
         """
-        Set up solvers
+        Set up solvers, solve the problem, and check the solver status and termination conditions
 
         Arguments
         ---------
-        :param mod: a Pyomo model 
         :mip_option: boolean, if True, it is a mixed-integer problem, otherwise it is a relaxed problem with no integer decisions
         :objective: Enum, "A" or "D" optimality, use trace or determinant of FIM 
         :degeneracy_hunter: boolean, when set up to True, use degeneracy hunter to check infeasibility in constraints. For debugging. 
         
         Return
         ------
-        mod: MINLP problem returns the solved model 
-        None: other problem returns none
+        None
         """
         if self.fixed_nlp:
             solver = pyo.SolverFactory('cyipopt')
@@ -1477,8 +1475,8 @@ class MeasurementOptimizer:
         Initialize, formulate, and solve the MO problem. 
         This function includes two steps: 
         1) Create the optimization problem (Pyomo model)
-        2) Initialilze the model with initial binary solutions 
-        3) 
+        2) Initialize the binary variables in the model with initial binary solutions 
+        3) Initialize other variables in the model, computed by the binary variable values 
 
         Arguments 
         ---------
@@ -1531,24 +1529,25 @@ class MeasurementOptimizer:
         # ==== Create the model ====
         # create model and save model to the object
         self._continuous_optimization(
-                            mixed_integer=mixed_integer, 
-                            obj=obj, 
-                            mix_obj = mix_obj, 
-                            alpha = alpha,
-                            fixed_nlp = fixed_nlp,
-                            fix=fix, 
-                            upper_diagonal_only=upper_diagonal_only, 
-                            num_dynamic_t_name = num_dynamic_t_name, 
-                            budget=budget_opt,
-                            init_cov_y=init_cov_y, initial_fim=initial_fim,
-                            dynamic_install_initial = dynamic_install_initial,
-                            total_measure_initial = total_measure_initial, 
-                            static_dynamic_pair=static_dynamic_pair,
-                            time_interval_all_dynamic = time_interval_all_dynamic,
-                            total_manual_num_init=total_manual_num_init, 
-                            cost_initial = cost_initial,
-                            fim_diagonal_small_element=fim_diagonal_small_element,
-                            print_level=print_level)
+                            mixed_integer=mixed_integer,  # if relaxed binary variables 
+                            obj=obj,  # objective function options, "A" or "D"
+                            mix_obj = mix_obj, # if using a combination of A- and D-optimality
+                            alpha = alpha, # if mix_obj = True, the weight of A-optimality
+                            fixed_nlp = fixed_nlp, # if this is a fixed NLP problem
+                            fix=fix,  # if this is a square problem 
+                            upper_diagonal_only=upper_diagonal_only, # if we only define upper triangular for symmetric matrices
+                            num_dynamic_t_name = num_dynamic_t_name, # exact time points for DCMs time points
+                            budget=budget_opt, # budget 
+                            init_cov_y=init_cov_y, # initial cov_y values
+                            initial_fim=initial_fim, # initial FIM values 
+                            dynamic_install_initial = dynamic_install_initial, # initial number of DCMs installed 
+                            total_measure_initial = total_measure_initial, # initial number of SCMs and time points selected
+                            static_dynamic_pair=static_dynamic_pair, # if one measurement can be seen as both DCM and SCM
+                            time_interval_all_dynamic = time_interval_all_dynamic, # time intervals between two time points of DCMs
+                            total_manual_num_init=total_manual_num_init, # total time points of DCMs selected 
+                            cost_initial = cost_initial, # initial cost of the current solution 
+                            fim_diagonal_small_element=fim_diagonal_small_element, # a small element added to FIM diagonals 
+                            print_level=print_level) # print level for optimization part
             
 
         # store the initialization dictionary 
@@ -1563,7 +1562,14 @@ class MeasurementOptimizer:
         self.customized_warmstart()
 
     def update_budget(self, budget_opt):
+        """
+        Update the budget of the created model, then initialize the model corresponding to the budget 
 
+        Arguments 
+        ---------
+        budget_opt: new budget 
+        """
+        # update the budget 
         self.mod.budget = budget_opt 
 
         # update the initialization according to the new budget 
@@ -1613,9 +1619,20 @@ class MeasurementOptimizer:
             file2.close()
     
     def _locate_initial_file(self, budget):
-
+        """
+        Given the budget, select which initial solution it should use by locating the closest budget that has stored solutions 
+        It selects according to: 
+        1) if this budget has a previous solution, find it, return the file name 
+        2) if this budget does not have a previous solution, find the closest budget that has a solution, return the file name
         
+        Arguments 
+        --------
+        budget: budget 
 
+        Return 
+        ------
+        y_init_file: the file name that contains a previous solution
+        """
         ## find if there has been a original solution for the current budget
         if budget in self.curr_res_list: # use an existed initial solutioon
             y_init_file = self.curr_res_list[budget]
@@ -1640,9 +1657,15 @@ class MeasurementOptimizer:
         return y_init_file
 
     def _initialize_binary(self, y_init_file):
-        """ This function initializes all binary variables 
+        """ This function initializes all binary variables directly in the created model 
 
+        Arguments
+        ---------
+        y_init_file: the file name that contains a previous solution
 
+        Return 
+        ------
+        None. self.mod is updated with initial values for all binary decisions
         """
         # read y 
         with open(y_init_file, 'rb') as f:
@@ -1692,10 +1715,6 @@ class MeasurementOptimizer:
         This is the warmstart function provided to MindtPy 
         It is called every mindtpy iteration, after solving MILP master problem, before solving the fixed NLP problem 
         This function initializes all continuous variables in the model given the integer decision values
-
-        Arguments
-        ---------
-        mod: pyomo model returned by the solver from the last MILP master solve. It has all integer decision values 
 
         Return 
         -----
