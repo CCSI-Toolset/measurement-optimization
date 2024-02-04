@@ -84,7 +84,8 @@ class LogDetModel(ExternalGreyBoxModel):
         output_con_multiplier_values: a scalar number for the output constraint multipliers
         """
         # because we only have one output constraint, the length is 1
-        assert len(output_con_multiplier_values) == 1
+        if len(output_con_multiplier_values) != 1:
+            raise ValueError("Output should be a scalar value. ")
         np.copyto(self._output_con_mult_values, output_con_multiplier_values)
 
     def finalize_block_construction(self, pyomo_block):

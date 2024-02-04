@@ -744,8 +744,13 @@ class MeasurementOptimizer:
                     #print("dynamic*dynamic, cov:", self.Sigma_inv[(i,j)])
                     unit = self.Sigma_inv[(i,j)]*np.asarray(self.jac_dynamic_flatten[i]).reshape(1, self.sens_info.n_parameters).T@np.asarray(self.jac_dynamic_flatten[j]).reshape(1,self.sens_info.n_parameters)
 
+                # check if unitFIM is symmetric
+                if not np.allclose(unit, unit.T):
+                    raise ValueError("The unit FIM is not symmetric with index:", i, j)
+
                 # store unit FIM following this order
                 self.unit_fims.append(unit.tolist())
+
 
         if self.precompute_print_level >= 1: 
             print("Number of unit FIMs:", len(self.unit_fims))
@@ -938,6 +943,7 @@ class MeasurementOptimizer:
         if initial_fim is not None:
             # Initialize dictionary for grey-box model, 
             # fim_initial_dict is given to greybox module as an argument
+            # key is the input name in grey-box; value is the initial value
             fim_initial_dict = {}
             for i in range(self.sens_info.n_parameters):
                 for j in range(i, self.sens_info.n_parameters):
