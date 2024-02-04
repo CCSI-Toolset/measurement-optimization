@@ -140,6 +140,28 @@ budget_ranges = np.linspace(1000,5000,11)
 # initialize with A-opt. MILP solutions
 initializer_option = "milp_A"
 
+# ==== initialization strategy ==== 
+if initializer_option == "milp_A":
+    curr_results = np.linspace(1000, 5000, 11)
+    file_name_pre, file_name_end = './kinetics_results/MILP_', '_a'
+
+elif initializer_option == "minlp_D":
+    curr_results = np.linspace(1000, 5000, 11)
+    file_name_pre, file_name_end = './kinetics_results/MINLP_', '_d_mip'
+
+elif initializer_option == "lp_A":
+    curr_results = np.linspace(1000, 5000, 41)
+    file_name_pre, file_name_end = './kinetics_results/LP_', '_a'
+
+elif initializer_option == "nlp_D":
+    curr_results = np.linspace(1000, 5000, 41)
+    file_name_pre, file_name_end = './kinetics_results/NLP_', '_d'
+
+
+# current results is a range containing the budgets at where the problems are solved 
+curr_results = set([int(curr_results[i]) for i in range(len(curr_results))])
+
+
 # create the model and solve for the first time 
 mod = optimizer(1000, initializer_option)
 # call the optimizer function to formulate the model and solve for the first time 

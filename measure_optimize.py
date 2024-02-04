@@ -1457,7 +1457,8 @@ class MeasurementOptimizer:
         Initialize, formulate, and solve the MO problem. 
         This function includes two steps: 
         1) Create the optimization problem (Pyomo model)
-        2) Initialilze the model
+        2) Initialilze the model with initial binary solutions 
+        3) 
 
         Arguments 
         ---------
@@ -1536,99 +1537,11 @@ class MeasurementOptimizer:
         else:
             update_model.budget = budget
 
+        # initialize the model with the binary decision variables
         init_cov_y = self._find_initial_point(initial_solution)
 
+        # warmstart function initializes the model with all the binary decisions values stored in the model
         mod = self.customized_warmstart(init_sol = init_cov_y)
-
-
-
-        # ==== initialization strategy ==== 
-        if initial_option == "milp_A":
-            curr_results = np.linspace(1000, 5000, 11)
-            file_name_pre, file_name_end = './kinetics_results/MILP_', '_a'
-
-        elif initial_option == "minlp_D":
-            curr_results = np.linspace(1000, 5000, 11)
-            file_name_pre, file_name_end = './kinetics_results/MINLP_', '_d_mip'
-
-        elif initial_option == "lp_A":
-            curr_results = np.linspace(1000, 5000, 41)
-            file_name_pre, file_name_end = './kinetics_results/LP_', '_a'
-
-        elif initial_option == "nlp_D":
-            curr_results = np.linspace(1000, 5000, 41)
-            file_name_pre, file_name_end = './kinetics_results/NLP_', '_d'
-
-
-        # current results is a range containing the budgets at where the problems are solved 
-        curr_results = set([int(curr_results[i]) for i in range(len(curr_results))])
-
-        ## find if there has been a original solution for the current budget
-        if budget_opt in curr_results: # use an existed initial solutioon
-            curr_budget = budget_opt
-
-        else:
-            # if not, find the closest budget, and use this as the initial point
-            curr_min_diff = np.inf # current minimal budget difference 
-            curr_budget = 5000 # starting point
-            
-            # find the existing budget that minimize curr_min_diff
-            for i in curr_results:
-                # if we found an existing budget that is closer to the given budget
-                if abs(i-budget_opt) < curr_min_diff:
-                    curr_min_diff = abs(i-budget_opt)
-                    curr_budget = i
-
-            print("using solution at", curr_budget, " too initialize")
-
-        # assign solution file names, and FIM file names
-        y_init_file = file_name_pre+str(curr_budget)+file_name_end
-        fim_init_file = file_name_pre+'fim_'+str(curr_budget)+file_name_end
-
-        # read y 
-        with open(y_init_file, 'rb') as f:
-            init_cov_y = pickle.load(f)
-
-        # Round possible float solution to be integer 
-        for i in range(self.num_measure_dynamic_flatten):
-            for j in range(self.num_measure_dynamic_flatten):
-                if init_cov_y[i][j] > 0.99:
-                    init_cov_y[i][j] = int(1)
-                else:
-                    init_cov_y[i][j] = int(0)
-                    
-        # initialize total manual number 
-        total_manual_init = 0 
-        # initialize the DCM installation flags
-        dynamic_install_init = [0,0,0]
-
-        # round solutions
-        # if floating solutions, if value > 0.01, we count it as an integer decision that is 1 or positive
-        for i in range(self.n_static_measurements,self.num_measure_dynamic_flatten):
-            if init_cov_y[i][i] > 0.01:
-                total_manual_init += 1 
-                
-                # identify which DCM this timepoint belongs to, turn the installation flag to be positive 
-                i_pos = int((i-self.n_static_measurements)/self.sens_info.Nt)
-                dynamic_install_init[i_pos] = 1
-                
-        # compute total measurements number, this is for integer cut
-        total_measure_init = sum(init_cov_y[i][i] for i in range(self.num_measure_dynamic_flatten))
-                
-        # initialize cost, this cost is calculated by the given initial solution
-        cost_init = sum(dynamic_install_init)*200+total_manual_init*400 + (init_cov_y[0][0]+init_cov_y[1][1]+init_cov_y[2][2])*2000
-
-        # read FIM, initialize FIM and logdet
-        with open(fim_init_file, 'rb') as f:
-            fim_prior = pickle.load(f)
-            
-        # initialize FIM with a small element 
-        for i in range(self.n_parameters):
-            fim_prior[i][i] += fim_diagonal_small_element
-
-        
-
-        
 
         return mod
     
@@ -1667,6 +1580,81 @@ class MeasurementOptimizer:
             pickle.dump(fim_result, file2)
             file2.close()
     
+    def _locate_initial_file(self, budget, curr_res_list):
+
+        
+
+        ## find if there has been a original solution for the current budget
+        if budget in curr_res_list: # use an existed initial solutioon
+            y_init_file = curr_res_list[budget]
+
+        else:
+            # if not, find the closest budget, and use this as the initial point
+            curr_min_diff = np.inf # current minimal budget difference 
+            curr_budget = max(list(curr_res_list.keys())) # starting point
+            
+            # find the existing budget that minimize curr_min_diff
+            for i in list(curr_res_list.keys()):
+                # if we found an existing budget that is closer to the given budget
+                if abs(i-budget) < curr_min_diff:
+                    curr_min_diff = abs(i-budget)
+                    curr_budget = i
+
+            print("using solution at", curr_budget, " too initialize")
+
+        # assign solution file names, and FIM file names
+        y_init_file = curr_res_list[curr_budget]
+        
+        return y_init_file
+
+    def _find_initial_point(self, y_init_file):
+        """ This function initializes all binary variables 
+
+
+        """
+        # read y 
+        with open(y_init_file, 'rb') as f:
+            init_cov_y = pickle.load(f)
+
+        # Round possible float solution to be integer 
+        for i in range(self.num_measure_dynamic_flatten):
+            for j in range(self.num_measure_dynamic_flatten):
+                if init_cov_y[i][j] > 0.99:
+                    init_cov_y[i][j] = int(1)
+                else:
+                    init_cov_y[i][j] = int(0)
+
+        # initialize m.cov_y with the intial solution 
+        # loop over number of measurements 
+        for a in range(self.num_measure_dynamic_flatten):
+            # cov_y only have the upper triangle part since solution matrix is symmetric
+            for b in range(a, self.num_measure_dynamic_flatten):
+                self.mod.cov_y[a,b] = init_cov_y[i][j]
+                    
+        # initialize total manual number. This is not needed since it is initialized by warmstart function
+        # kept for now
+        # total_manual_init = 0
+                     
+        # initialize the DCM installation flags
+        # this needs initialized since it is binary decisions which warmstart function won't initialize
+        dynamic_install_init = [0,0,0]
+
+        # round solutions
+        # if floating solutions, if value > 0.01, we count it as an integer decision that is 1 or positive
+        for i in range(self.n_static_measurements,self.num_measure_dynamic_flatten):
+            if init_cov_y[i][i] > 0.01:
+                #total_manual_init += 1  # kept this line for now
+                
+                # identify which DCM this timepoint belongs to, turn the installation flag to be positive 
+                i_pos = int((i-self.n_static_measurements)/self.sens_info.Nt)
+                dynamic_install_init[i_pos] = 1
+
+        # initialize m.if_install_dynamic with the value calculated
+        # loop over DCM index 
+        for i in self.mod.dim_dynamic:
+            self.mod.if_install_dynamic = dynamic_install_init[i]
+
+
     def customized_warmstart(self, mod):
         """
         This is the warmstart function provided to MindtPy 
