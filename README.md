@@ -24,14 +24,10 @@ The following instructions assume you have anaconda installed. We suggest create
 `idaes get-extensions`
    
 ### Step 3: install `Pyomo` from specified branches
-- a generalization version is in progress, although still need to get debugged. For now, we use two different branches for each case study:
-- branch for kinetic case study: 
+- install from the following branch for a generalization version of Mindtpy:
 
-  `pip install git+https://github.com/jialuw96/pyomo.git@MindtpyReactor`
+`pip install git+https://github.com/ZedongPeng/pyomo.git@add_mindtpy_callback`
 
-- branch for rotary bed case study: 
-
-  `pip install git+https://github.com/jialuw96/pyomo.git@MindtpyRotary`
    
 ### Step 4: install `GurobiPy`
 - this is needed only for solving mixed-integer problems
