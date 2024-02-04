@@ -173,11 +173,9 @@ for b in curr_results:
     initial_solution[b] = file_name_pre + str(b) + file_name_end
 
 
-# create the model and solve for the first time 
-mod = calculator.optimizer(1000, initializer_option)
 # call the optimizer function to formulate the model and solve for the first time 
-# optimizer method will 1) create the model 2) initialize the model 
-mod = calculator.optimizer(mixed_integer=mip_option, 
+# optimizer method will 1) create the model and save as self.mod 2) initialize the model 
+calculator.optimizer(mixed_integer=mip_option, 
                                 obj=objective, 
                                 mix_obj = mix_obj_option, 
                                 alpha = alpha_opt,
@@ -185,36 +183,27 @@ mod = calculator.optimizer(mixed_integer=mip_option,
                                 fix=fix_opt, 
                                 upper_diagonal_only=sparse_opt, 
                                 num_dynamic_t_name = num_dynamic_time, 
-                                budget=budget_opt,
-                                init_cov_y= init_cov_y,
-                                initial_fim = fim_prior,
-                                dynamic_install_initial = dynamic_install_init, 
-                                total_measure_initial = total_measure_init, 
                                 static_dynamic_pair=static_dynamic,
                                 time_interval_all_dynamic = time_interval_for_all,
-                                total_manual_num_init=total_manual_init,
-                                cost_initial = cost_init, 
                                 FIM_diagonal_small_element=small_element,
                                 print_level=1)
 
-calculator.solve(mod)
-
 t2 = time.time()
-mod = calculator.solve(mod, mip_option=mip_option, objective = objective)
+calculator.solve(mip_option=mip_option, objective = objective)
 t3 = time.time()
 
 print("model and solver wall clock time:", t3-t1)
 print("solver wall clock time:", t3-t2)
 
-calculator.extract_store_sol(mod)
+calculator.extract_store_sol()
 
 # loop over all budgets
 for b in budget_ranges:
     print("====Solving with budget:", b, "====")
     # open the update toggle every time so no need to create model every time
-    calculator.update(mod, b, initializer_option, update_model=mod, store_name = "MINLP_result_")
+    calculator.update(b, initializer_option, update_model=mod, store_name = "MINLP_result_")
 
-    calculator.solve(mod)
+    calculator.solve(mip_option=mip_option, objective = objective)
 
 
 

@@ -1265,7 +1265,8 @@ class MeasurementOptimizer:
                 # maximize logdet obj
                 m.Obj = pyo.Objective(expr=m.my_block.egb.outputs['log_det'], sense=pyo.maximize)
 
-        return m 
+        # add model to object
+        self.mod = m 
 
 
     def build_model_external(self, m, fim_init=None):
@@ -1330,7 +1331,7 @@ class MeasurementOptimizer:
 
         return fim
     
-    def solve(self, mod, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False):
+    def solve(self, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False):
         """
         Set up solvers
 
@@ -1361,7 +1362,7 @@ class MeasurementOptimizer:
             # copy solver options
             for k,v in additional_options.items():
                 solver.config.options[k] = v
-            solver.solve(mod, tee=True)
+            solver.solve(self.mod, tee=True)
             
         
         elif not mip_option and objective==ObjectiveLib.A:
@@ -1371,12 +1372,12 @@ class MeasurementOptimizer:
                 
             solver = pyo.SolverFactory('gurobi', solver_io="python")
             solver.options['mipgap'] = 0.1
-            solver.solve(mod, tee=True)
+            solver.solve(self.mod, tee=True)
 
         elif mip_option and objective==ObjectiveLib.A:
             solver = pyo.SolverFactory('gurobi', solver_io="python")
             #solver.options['mipgap'] = 0.1
-            solver.solve(mod, tee=True)
+            solver.solve(self.mod, tee=True)
             
         elif not mip_option and objective==ObjectiveLib.D:  
             solver = pyo.SolverFactory('cyipopt')
@@ -1391,14 +1392,14 @@ class MeasurementOptimizer:
             # copy solver options
             for k,v in additional_options.items():
                 solver.config.options[k] = v
-            solver.solve(mod, tee=True)
+            solver.solve(self.mod, tee=True)
 
         elif mip_option and objective==ObjectiveLib.D:
             
             solver = pyo.SolverFactory("mindtpy")
 
             results = solver.solve(
-                mod, 
+                self.mod, 
                 strategy="OA",  
                 init_strategy = "rNLP",
                 #init_strategy='initial_binary',
@@ -1434,7 +1435,7 @@ class MeasurementOptimizer:
                 },
             )
 
-        return mod
+        return self.mod
     
     def optimizer(self, budget_opt, initial_option, 
                         initial_solution,
@@ -1469,6 +1470,8 @@ class MeasurementOptimizer:
             # milp_A: initialize with milp_A solutions
             # lp_A: iniitalize with lp_A solution 
             # nlp_D: initialize with nlp_D solution
+        :param initial_solution: a dictionary, key: budget, value: initial solution pickle file name 
+            this option stores the available initial solutions with their budgets
         :param update_model: a Pyomo model or None. if given a Pyomo model, only update the budget
         :param mixed_integer: boolean 
             not relaxing integer decisions
@@ -1513,10 +1516,11 @@ class MeasurementOptimizer:
             3: print everything that could help with debugging 
         """
 
-        # ==== Createe the model ====
+        # ==== Create the model ====
         if not update_model:
-            # create model
-            mod = self._continuous_optimization(mixed_integer=mixed_integer, 
+            # create model and save model to the object
+            self._continuous_optimization(
+                                mixed_integer=mixed_integer, 
                                 obj=obj, 
                                 mix_obj = mix_obj, 
                                 alpha = alpha,
@@ -1525,27 +1529,27 @@ class MeasurementOptimizer:
                                 upper_diagonal_only=upper_diagonal_only, 
                                 num_dynamic_t_name = num_dynamic_t_name, 
                                 budget=budget,
-                                #dynamic_install_initial = dynamic_install_init, 
-                                #total_measure_initial = total_measure_init, 
                                 static_dynamic_pair=static_dynamic_pair,
                                 time_interval_all_dynamic = time_interval_all_dynamic,
-                                #total_manual_num_init=total_manual_init,
-                                #cost_initial = cost_init, 
                                 fim_diagonal_small_element=fim_diagonal_small_element,
                                 print_level=1)
             
         else:
-            update_model.budget = budget
+            # there is already a model in the object, change the budget 
+            self.mod.budget = budget
 
+        # ==== Initialize the model ====   
+        # locate the binary solution file according to the new budget 
+        self._locate_initial_file(budget, # new budget 
+                                  curr_res_list=initial_solution # dictionary that stores budget: solution file name
+                                  )
         # initialize the model with the binary decision variables
-        init_cov_y = self._find_initial_point(initial_solution)
+        self._initialize_binary(initial_solution)
 
         # warmstart function initializes the model with all the binary decisions values stored in the model
-        mod = self.customized_warmstart(init_sol = init_cov_y)
-
-        return mod
+        self.customized_warmstart()
     
-    def extract_store_sol(self, mod, store_name, budget_opt):
+    def extract_store_sol(self, store_name, budget_opt):
         """
         Extract the solution from pyomo model, store in two pickles. 
         First data file (store_name+"_fim_"+budget_opt): pickle, a Nm*Nm numpy array that is the solution of measurements 
@@ -1607,7 +1611,7 @@ class MeasurementOptimizer:
         
         return y_init_file
 
-    def _find_initial_point(self, y_init_file):
+    def _initialize_binary(self, y_init_file):
         """ This function initializes all binary variables 
 
 
@@ -1655,7 +1659,7 @@ class MeasurementOptimizer:
             self.mod.if_install_dynamic = dynamic_install_init[i]
 
 
-    def customized_warmstart(self, mod):
+    def customized_warmstart(self):
         """
         This is the warmstart function provided to MindtPy 
         It is called every mindtpy iteration, after solving MILP master problem, before solving the fixed NLP problem 
@@ -1675,15 +1679,15 @@ class MeasurementOptimizer:
 
         if self.optimize_print_level >= 3:
             # print to see how many non-zero solutions are in the solution
-            for a in mod.n_responses:
-                for b in mod.n_responses:
+            for a in self.mod.n_responses:
+                for b in self.mod.n_responses:
                     if b>=a:
                         # all solutions that are bigger than 0.001 are treated as non-zero
-                        if mod.cov_y[a,b].value > 0.001:
-                            print(a, b, mod.cov_y[a,b].value)
+                        if self.mod.cov_y[a,b].value > 0.001:
+                            print(a, b, self.mod.cov_y[a,b].value)
         
         # compute FIM 
-        def eval_fim_warmstart(m, a, b):
+        def eval_fim_warmstart(a, b):
             """
             Evaluate FIM
             FIM = sum(cov_y[i,j]*unit FIM[i,j]) for all i, j in n_responses
@@ -1696,14 +1700,14 @@ class MeasurementOptimizer:
                 # initialize the element
                 summi = 0 
                 # loop over the number of measurements
-                for i in m.n_responses:
+                for i in self.mod.n_responses:
                     # loop over the number of measurements
-                    for j in m.n_responses:
+                    for j in self.mod.n_responses:
                         # cov_y is also a symmetric matrix, we use only the upper triangle of it to compute FIM
                         if j>=i:
-                            summi += m.cov_y[i,j].value*self.unit_fims[i*self.num_measure_dynamic_flatten+j][a][b]
+                            summi += self.mod.cov_y[i,j].value*self.unit_fims[i*self.num_measure_dynamic_flatten+j][a][b]
                         else:
-                            summi += m.cov_y[j,i].value*self.unit_fims[i*self.num_measure_dynamic_flatten+j][a][b]
+                            summi += self.mod.cov_y[j,i].value*self.unit_fims[i*self.num_measure_dynamic_flatten+j][a][b]
                 return summi
             # check error. we only compute upper diagonal
             else:
@@ -1711,13 +1715,13 @@ class MeasurementOptimizer:
                 
         # compute each element in FIM
         # loop over number of parameters
-        for a in mod.dim_fim:
+        for a in self.mod.dim_fim:
             # loop over number of parameters
-            for b in mod.dim_fim:
+            for b in self.mod.dim_fim:
                 # Only compute the upper triangle part since FIM is symmetric
                 if a<=b:
                     # compute FIM[a,b]
-                    dynamic_initial_element = eval_fim_warmstart(mod, a,b)
+                    dynamic_initial_element = eval_fim_warmstart(a,b)
                     # FIM is symmetric, FIM[a,b] == FIM[b,a]
                     new_fim[a,b] = dynamic_initial_element
                     new_fim[b,a] = dynamic_initial_element   
@@ -1738,28 +1742,28 @@ class MeasurementOptimizer:
 
         # add the FIM small diagonal element to FIM to be consistent
         for i in range(self.sens_info.n_parameters):
-            new_fim[i][i] += mod.fim_diagonal_small_element
+            new_fim[i][i] += self.mod.fim_diagonal_small_element
 
         # initialize grey-box module
         # loop over parameters
-        for a in mod.dim_fim:
+        for a in self.mod.dim_fim:
             # loop over parameters
-            for b in mod.dim_fim:
+            for b in self.mod.dim_fim:
                 # grey-box only needs the upper triangle elements for it only defines and flattens the upper half
                 if a<=b:
-                    mod.total_fim[a,b].value = new_fim[a][b]
+                    self.mod.total_fim[a,b].value = new_fim[a][b]
 
                     # grey-box uses a tuple as the input name
                     grey_box_name = (a,b)
                     # initialize grey-box value
-                    mod.my_block.egb.inputs[grey_box_name] = new_fim[a][b]
+                    self.mod.my_block.egb.inputs[grey_box_name] = new_fim[a][b]
 
         # initialize determinant 
         # use slogdet to avoid ill-conditioning issue
         _, logdet = np.linalg.slogdet(new_fim)
 
         # initialize grey-box module output
-        mod.my_block.egb.outputs["log_det"] = logdet
+        self.mod.my_block.egb.outputs["log_det"] = logdet
 
         if self.optimize_print_level >= 1:
             print("Warmstart initialize FIM with: ", new_fim)
@@ -1788,16 +1792,16 @@ class MeasurementOptimizer:
 
 
         # compute cost
-        cost_init = cost_compute(mod)
+        cost_init = cost_compute(self.mod)
         # copmute total number of dynamic time points selected
-        total_dynamic_initial = total_dynamic_exp(mod)
+        total_dynamic_initial = total_dynamic_exp(self.mod)
         # compute total number of measurements selected
-        total_initial = total_exp(mod)
+        total_initial = total_exp(self.mod)
         
         # initialize model variables 
-        mod.total_number_dynamic_measurements.value = total_dynamic_initial 
-        mod.total_number_measurements.value = total_initial
-        mod.cost.value = cost_init
+        self.mod.total_number_dynamic_measurements.value = total_dynamic_initial 
+        self.mod.total_number_measurements.value = total_initial
+        self.mod.cost.value = cost_init
         
         if self.optimize_print_level >= 1:
             print("warmstart initialize total measure:", total_initial)
@@ -1887,7 +1891,7 @@ class MeasurementOptimizer:
         self.__solution_analysis(y_matrice, obj.value)
             
 
-    def extract_solutions(self, mod):
+    def extract_solutions(self):
         """
         Extract and show solutions from a solved Pyomo model
         mod is an argument because we 
@@ -1908,7 +1912,7 @@ class MeasurementOptimizer:
         for i in range(self.num_measure_dynamic_flatten):
             # loop over the measurement choice index
             for j in range(i, self.num_measure_dynamic_flatten):
-                cov = pyo.value(mod.cov_y[i,j])
+                cov = pyo.value(self.mod.cov_y[i,j])
                 # give value to its symmetric part
                 ans_y[i,j] = ans_y[j,i] = cov 
 
