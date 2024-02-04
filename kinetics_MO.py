@@ -141,29 +141,40 @@ budget_ranges = np.linspace(1000,5000,11)
 initializer_option = "milp_A"
 
 # ==== initialization strategy ==== 
+# according to the initializer option, we provide different sets of initialization files 
 if initializer_option == "milp_A":
+    # all budgets
     curr_results = np.linspace(1000, 5000, 11)
+    # initial solution file path and name 
     file_name_pre, file_name_end = './kinetics_results/MILP_', '_a'
-
+    
 elif initializer_option == "minlp_D":
+    # all budgets
     curr_results = np.linspace(1000, 5000, 11)
+    # initial solution file path and name 
     file_name_pre, file_name_end = './kinetics_results/MINLP_', '_d_mip'
 
 elif initializer_option == "lp_A":
+    # all budgets
     curr_results = np.linspace(1000, 5000, 41)
+    # initial solution file path and name 
     file_name_pre, file_name_end = './kinetics_results/LP_', '_a'
 
 elif initializer_option == "nlp_D":
+    # all budgets
     curr_results = np.linspace(1000, 5000, 41)
+    # initial solution file path and name 
     file_name_pre, file_name_end = './kinetics_results/NLP_', '_d'
 
-
-# current results is a range containing the budgets at where the problems are solved 
-curr_results = set([int(curr_results[i]) for i in range(len(curr_results))])
+# initialize the initial solution dict. key: budget. value: initial solution file name 
+initial_solution = {}
+# loop over budget
+for b in curr_results:
+    initial_solution[b] = file_name_pre + str(b) + file_name_end
 
 
 # create the model and solve for the first time 
-mod = optimizer(1000, initializer_option)
+mod = calculator.optimizer(1000, initializer_option)
 # call the optimizer function to formulate the model and solve for the first time 
 # optimizer method will 1) create the model 2) initialize the model 
 mod = calculator.optimizer(mixed_integer=mip_option, 
