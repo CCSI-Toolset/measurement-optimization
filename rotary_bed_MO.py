@@ -67,9 +67,9 @@ static_cost = [
     1000,  # ads.T19 (8)
     1000,  # ads.T23 (9)
     1000,  # ads.T28 (10)
-    7000,  # ads.z
-    7000,
-]  # des.z
+    7000,  # ads.gas_outlet.z("CO2")
+    7000, # des.gas_outlet.z("CO2")
+] 
 
 # define static cost (installaion) for dynamic-cost
 static_cost.extend([100, 100, 500, 500, 500])
@@ -102,24 +102,24 @@ measure_info = MeasurementData(
 # Nt is the number of time points for each measurement
 jac_info = SensitivityData("./RotaryBed/Q3_scale.csv", Nt)
 static_measurement_index = [
-    0,
-    1,
-    2,
-    4,
-    5,
-    6,
-    8,
-    9,
-    10,
-    3,
-    7,
+    0, # ads.gas_inlet.F (0)
+    1, # ads.gas_outlet.F (1)
+    2, # ads.gas_outlet.T (2)
+    4, # des.gas_inlet.F (4)
+    5, # des.gas_outlet.F (5)
+    6, # des.gas_outlet.T (6)
+    8, # ads.T19 (8)
+    9, # ads.T23 (9)
+    10, # ads.T28 (10)
+    3, # ads.gas_outlet.z("CO2")
+    7, # des.gas_outlet.z("CO2")
 ]  # the index of CA, CB, CC in the jacobian array, considered as SCM
 dynamic_measurement_index = [
-    3,
-    7,
-    11,
-    12,
-    13,
+    3, # ads.gas_outlet.z("CO2")
+    7, # des.gas_outlet.z("CO2")
+    11, # ads.z("CO2",19,10)
+    12, # ads.z("CO2",23,10)
+    13, # ads.z("CO2",28,10)
 ]  # the index of CA, CB, CC in the jacobian array, also considered as DCM
 jac_info.get_jac_list(
     static_measurement_index,  # the index of SCMs in the jacobian array
