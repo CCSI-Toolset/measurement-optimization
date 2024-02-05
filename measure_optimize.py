@@ -883,7 +883,7 @@ class MeasurementOptimizer:
         if self.precompute_print_level >= 1:
             print("Number of unit FIMs:", len(self.unit_fims))
 
-    def __measure_matrix(self, measurement_vector):
+    def _measure_matrix(self, measurement_vector):
         """
         This is a helper function, when giving a vector of solutions, it converts this vector into a 2D array
         This is needed for validating the solutions after the optimization, 
@@ -1552,7 +1552,7 @@ class MeasurementOptimizer:
         FIM: a numpy array containing the total FIM given this solution
         """
         # generate measurement matrix
-        measurement_matrix = self.__measure_matrix(measurement_vector)
+        measurement_matrix = self._measure_matrix(measurement_vector)
 
         # compute FIM as Np*Np
         fim = np.zeros((self.no_param, self.no_param))
