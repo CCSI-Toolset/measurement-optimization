@@ -157,7 +157,7 @@ class SensitivityData:
         # why not sum up static index number and dynamic index number? because they can overlap
         max_measure_idx = max(max(static_measurement_idx), max(dynamic_measurement_idx))
         # the total rows of Q should be equal or more than the number of maximum index given by the argument
-        if len(jac) < max_measure_idx * self.Nt:
+        if len(self.jacobian) < max_measure_idx * self.Nt:
             raise ValueError(
                 "Inconsistent Jacobian matrix shape. Expecting at least "
                 + str(max_measure_idx * self.Nt)
@@ -179,7 +179,8 @@ class SensitivityData:
         else:
             dynamic_idx_len = 0
 
-        # compute N_total_measure, including both SCMs and DCMs
+        # compute N_total_measure, including both SCMs and DCMs. store for later use
+        self.total_measure_idx = static_idx_len + dynamic_idx_len
         # all measurements have Nt time points
         total_measure_len = (static_idx_len + dynamic_idx_len) * self.Nt
 
@@ -353,7 +354,7 @@ class MeasurementOptimizer:
         static_measurement_idx, dynamic_measurement_idx = [], []
         # dynamic_cost_measure_info stores the static costs of dynamic-cost measurements
         # static_cost_measure_info stores the static costs of static-cost measurements
-        dynamic_cost_measure_info, static_cost_measure_info = []
+        dynamic_cost_measure_info, static_cost_measure_info = [], []
         # loop over the number of measurements
         for i in range(len(self.measure_info.dynamic_cost)):
             # if there is no dynamic costs, this is a static-cost measurement
@@ -369,6 +370,10 @@ class MeasurementOptimizer:
                 # add its static cost to the dynamic-cost measurements' cost list
                 dynamic_cost_measure_info.append(self.measure_info.static_cost[i])
 
+        if self.precompute_print_level == 3:
+            print("Static-cost measurement idx:", static_measurement_idx)
+            print("Dynamic-cost measurement idx:", dynamic_measurement_idx)
+        
         # number of SCMs
         self.n_static_measurements = len(static_measurement_idx)
         # SCM indices
@@ -483,27 +488,27 @@ class MeasurementOptimizer:
             # loop over the index of DCM to retrieve the number of time points for DCM
             for i in range(self.n_total_measurements):
                 # check row number
-                if len(error_cov[0]) != self.sens_info.Nt[i]:
+                if len(error_cov[0]) != self.sens_info.Nt:
                     raise ValueError(
-                        "error_cov[i] must have the shape Nt[i]*Nt[i]. Expect number of rows:"
-                        + str(self.sens_info.Nt[i])
+                        "error_cov[i] must have the shape Nt*Nt. Expect number of rows:"
+                        + str(self.sens_info.Nt)
                     )
                 # check column number
-                if len(error_cov[0][0]) != self.sens_info.Nt[i]:
+                if len(error_cov[0][0]) != self.sens_info.Nt:
                     raise ValueError(
-                        "error_cov[i] must have the shape Nt[i]*Nt[i]. Expect number of columns:"
-                        + str(self.sens_info.Nt[i])
+                        "error_cov[i] must have the shape Nt*Nt. Expect number of columns:"
+                        + str(self.sens_info.Nt)
                     )
 
         elif error_option == CovarianceStructure.measure_correlation:
             # check row number
-            if len(error_cov) != self.n_total_measurements:
+            if len(error_cov) != self.sens_info.total_measure_idx:
                 raise ValueError(
                     "error_cov must have the same length as n_total_measurements. Expect number of rows:"
                     + str(self.n_total_measurements)
                 )
             # check column number
-            if len(error_cov[0]) != self.n_total_measurements:
+            if len(error_cov[0]) != self.sens_info.total_measure_idx:
                 raise ValueError(
                     "error_cov[i] must have the same length as n_total_measurements. Expect number of columns:"
                     + str(self.n_total_measurements)
@@ -561,12 +566,20 @@ class MeasurementOptimizer:
         # counter for flatten
         count2 = 0
         # loop over total measurement index
-        for i in range(self.n_total_measurements):
+        for i in range(self.sens_info.total_measure_idx):
             if (
                 i in self.static_measurement_idx
             ):  # static measurements are not flattened for dynamic flatten
-                # dynamic_flatten
-                jac_dynamic_flatten.append(jac[i])
+                if self.precompute_print_level == 3:
+                    print("Static-cost measurement idx: ", i)
+                # dynamic_flatten for SCM
+                jacobian_static = [] 
+                # locate head row of the sensitivity for this measurement 
+                head_row = i*self.sens_info.Nt 
+                for t in range(self.sens_info.Nt):
+                    jacobian_static.append(jac[head_row+t])
+
+                jac_dynamic_flatten.append(jacobian_static)
                 # map position index in jac_dynamic_flatten where each measurement starts
                 self.head_pos_dynamic_flatten[i] = count1
                 # store all static measurements index after dynamic_flattening
@@ -578,8 +591,8 @@ class MeasurementOptimizer:
                 )  # static measurement's dynamic_flatten index corresponds to a list of flattened index
 
                 # flatten
-                for t in range(len(jac[i])):
-                    jac_flatten.append(jac[i][t])
+                for t in range(self.sens_info.Nt):
+                    jac_flatten.append(jac[head_row+t])
                     if t == 0:
                         self.head_pos_flatten[i] = count2
                     # all static measurements index after flatten
@@ -590,15 +603,21 @@ class MeasurementOptimizer:
 
                 count1 += 1
 
-            else:
+            elif (
+                i in self.dynamic_measurement_idx
+            ):
+                if self.precompute_print_level == 3:
+                    print("Dynamic-cost measurement idx: ", i)
                 # dynamic measurements are flattend for both dynamic_flatten and flatten
-                for t in range(len(jac[i])):
-                    jac_dynamic_flatten.append(jac[i][t])
+                # locate head row of the sensitivity for this measurement 
+                head_row = i*self.sens_info.Nt 
+                for t in range(self.sens_info.Nt):
+                    jac_dynamic_flatten.append(jac[head_row+t])
                     if t == 0:
                         self.head_pos_dynamic_flatten[i] = count1
                     self.dynamic_idx_dynamic_flatten.append(count1)
 
-                    jac_flatten.append(jac[i][t])
+                    jac_flatten.append(jac[head_row+t])
                     if t == 0:
                         self.head_pos_flatten[i] = count2
                     self.dynamic_to_flatten[count1] = count2
@@ -619,6 +638,10 @@ class MeasurementOptimizer:
 
         if self.precompute_print_level >= 2:
             print("Number of binary decisions:", self.num_measure_dynamic_flatten)
+        
+            if self.precompute_print_level ==3: 
+                print("Dimension after dynamic flatten:", self.dynamic_idx_dynamic_flatten)
+                print("Dimension after flatten:", self.dynamic_idx_flatten)
 
     def _build_sigma(self, error_cov, error_option):
         """Build error covariance matrix 
@@ -676,8 +699,8 @@ class MeasurementOptimizer:
                 sigma_i_start = self.head_pos_flatten[i]
                 # loop over all timepoints for measurement i
                 # for each measurement, the time correlation matrix is Nt*Nt
-                for t1 in range(self.sens_info.Nt[i]):
-                    for t2 in range(self.sens_info.Nt[i]):
+                for t1 in range(self.sens_info.Nt):
+                    for t2 in range(self.sens_info.Nt):
                         # for the ith measurement, the error matrix is error_cov[i]
                         Sigma[sigma_i_start + t1, sigma_i_start + t2] = error_cov[i][
                             t1
@@ -692,18 +715,18 @@ class MeasurementOptimizer:
         # the covariances between measurements at the same timestep in a time-invariant way
         elif error_option == CovarianceStructure.measure_correlation:
             # loop over number of measurements
-            for i in range(self.n_total_measurements):
+            for i in range(self.sens_info.total_measure_idx):
                 # loop over number of measurements
-                for j in range(self.n_total_measurements):
+                for j in range(self.sens_info.total_measure_idx):
                     # find the covariance term
                     cov_ij = error_cov[i][j]
-                    # find the starting index for each measurement (each measurement i has Nt[i] entries)
+                    # find the starting index for each measurement (each measurement i has Nt entries)
                     head_i = self.head_pos_flatten[i]
                     # starting index for measurement j
                     head_j = self.head_pos_flatten[j]
                     # i, j may have different timesteps
                     # we find the corresponding index by locating the starting indices
-                    for t in range(min(self.sens_info.Nt[i], self.sens_info.Nt[j])):
+                    for t in range(self.sens_info.Nt):
                         Sigma[t + head_i, t + head_j] = cov_ij
 
             if self.precompute_print_level >= 2:
@@ -751,10 +774,10 @@ class MeasurementOptimizer:
                 j
             ) in self.static_idx_dynamic_flatten:  # loop over static measurement index
                 # should be a (Nt_i+Nt_j)*(Nt_i+Nt_j) matrix
-                sig = np.zeros((self.sens_info.Nt[i], self.sens_info.Nt[j]))
+                sig = np.zeros((self.sens_info.Nt, self.sens_info.Nt))
                 # row [i, i+Nt_i], column [i, i+Nt_i]
-                for ti in range(self.sens_info.Nt[i]):  # loop over time points
-                    for tj in range(self.sens_info.Nt[j]):  # loop over time points
+                for ti in range(self.sens_info.Nt):  # loop over time points
+                    for tj in range(self.sens_info.Nt):  # loop over time points
                         sig[ti, tj] = Sigma_inv[
                             self.head_pos_flatten[i] + ti, self.head_pos_flatten[j] + tj
                         ]
@@ -768,9 +791,11 @@ class MeasurementOptimizer:
                 self.dynamic_idx_dynamic_flatten
             ):  # loop over dynamic measuremente index
                 # should be a vector, here as a Nt*1 matrix
-                sig = np.zeros((self.sens_info.Nt[i], 1))
+                sig = np.zeros((self.sens_info.Nt, 1))
                 # row [i, i+Nt_i], col [j]
-                for t in range(self.sens_info.Nt[i]):  # loop over time points
+                for t in range(self.sens_info.Nt):  # loop over time points
+                    #print(i,j)
+                    #print(t, self.head_pos_flatten[i], self.dynamic_to_flatten[j])
                     sig[t, 0] = Sigma_inv[
                         self.head_pos_flatten[i] + t, self.dynamic_to_flatten[j]
                     ]
@@ -784,9 +809,9 @@ class MeasurementOptimizer:
                 j
             ) in self.static_idx_dynamic_flatten:  # loop over static measurement index
                 # should be a vector, here as Nt*1 matrix
-                sig = np.zeros((self.sens_info.Nt[j], 1))
+                sig = np.zeros((self.sens_info.Nt, 1))
                 # row [j, j+Nt_j], col [i]
-                for t in range(self.sens_info.Nt[j]):  # loop over time
+                for t in range(self.sens_info.Nt):  # loop over time
                     sig[t, 0] = Sigma_inv[
                         self.head_pos_flatten[j] + t, self.dynamic_to_flatten[i]
                     ]
@@ -874,8 +899,11 @@ class MeasurementOptimizer:
                     )
 
                 # check if unitFIM is symmetric
-                if not np.allclose(unit, unit.T):
-                    raise ValueError("The unit FIM is not symmetric with index:", i, j)
+                # Note: I removed this function because unit FIM doesn't need to be symmetric
+                #f not np.allclose(unit, unit.T):
+                #   if self.precompute_print_level == 3:
+                #       print("Index ",i,j, "has not symmetric FIM:", unit)
+                #   raise ValueError("The unit FIM is not symmetric with index:", i, j)
 
                 # store unit FIM following this order
                 self.unit_fims.append(unit.tolist())
