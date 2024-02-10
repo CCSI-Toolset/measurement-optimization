@@ -386,6 +386,8 @@ class MeasurementOptimizer:
         self.cost_list = static_cost_measure_info
         # dynamic-cost measurements' cost list
         self.dynamic_cost_measure_info = dynamic_cost_measure_info
+        # get DCM installation costs 
+        self.dynamic_install_cost = [self.measure_info.static_cost[i] for i in dynamic_measurement_idx]
 
         # parse measurement names
         self.measure_name = self.measure_info.name  # measurement name list
@@ -504,14 +506,14 @@ class MeasurementOptimizer:
             # check row number
             if len(error_cov) != self.sens_info.total_measure_idx:
                 raise ValueError(
-                    "error_cov must have the same length as n_total_measurements. Expect number of rows:"
-                    + str(self.n_total_measurements)
+                    "error_cov must have the same length as total_measure_idx. Expect number of rows:"
+                    + str(self.sens_info.total_measure_idx)
                 )
             # check column number
             if len(error_cov[0]) != self.sens_info.total_measure_idx:
                 raise ValueError(
-                    "error_cov[i] must have the same length as n_total_measurements. Expect number of columns:"
-                    + str(self.n_total_measurements)
+                    "error_cov[i] must have the same length as total_measure_idx. Expect number of columns:"
+                    + str(self.sens_info.total_measure_idx)
                 )
 
         elif error_option == CovarianceStructure.time_measure_correlation:
@@ -1030,6 +1032,9 @@ class MeasurementOptimizer:
         m.fim_diagonal_small_element = pyo.Param(
             initialize=fim_diagonal_small_element, mutable=True
         )
+        # this element needs to be stored in object for warmstart function use 
+        # because warmstart function won't work for pyomo model component
+        self.fim_diagonal_small_element = fim_diagonal_small_element
 
         # print_level received here is for the optimization algorithm debugging
         self.optimize_print_level = print_level
@@ -1042,7 +1047,7 @@ class MeasurementOptimizer:
         # dynamic measurement index number
         # Pyomo model explicitly numbers all of the static measurements first and then all of the dynmaic measurements
         m.dim_dynamic = pyo.Set(
-            initialize=range(self.n_static_measurements, self.n_total_measurements)
+            initialize=range(self.n_static_measurements, self.sens_info.total_measure_idx)
         )
         # turn dynamic measurement number of timepoints into a pyomo set
         m.dim_dynamic_t = pyo.Set(initialize=range(self.dynamic_Nt))
@@ -1125,6 +1130,14 @@ class MeasurementOptimizer:
             m.cov_y.fix()
 
         def init_fim(m, p, q):
+            """ initialize FIM
+            """
+            if not initial_fim: # if None, use identity matrix
+                if p==q: 
+                    return 1 
+                else:
+                    return 0 
+                
             return initial_fim[p, q]
 
         # this function is used to initialize grey-box model
@@ -1137,6 +1150,8 @@ class MeasurementOptimizer:
                 for j in range(i, self.sens_info.n_parameters):
                     str_name = (i, j)
                     fim_initial_dict[str_name] = initial_fim[i, j]
+
+        
 
         if self.optimize_print_level >= 2:
             print("FIM is initialized with:", initial_fim)
@@ -1392,7 +1407,7 @@ class MeasurementOptimizer:
                             self.n_static_measurements + (i + 1) * self.dynamic_Nt
                         )  # the end index of this dynamical measurement
                         cost = sum(m.cov_y[j, j] for j in range(start, end))
-                        return cost <= self.each_manual_number[0]
+                        return cost <= self.each_manual_number
 
                     con_name = "con" + str(i)
                     m.add_component(con_name, pyo.Constraint(expr=dynamic_manual_num))
@@ -1426,7 +1441,7 @@ class MeasurementOptimizer:
                             # get the timepoints in this interval
                             while (count + t < self.dynamic_Nt) and (
                                 dynamic_time[count + t] - dynamic_time[t]
-                            ) < self.min_time_interval[0]:
+                            ) < self.min_time_interval:
                                 for i in m.dim_dynamic:
                                     surro_idx = (
                                         self.n_static_measurements
@@ -1457,7 +1472,7 @@ class MeasurementOptimizer:
                                 # get timepoints in this interval
                                 while (count + t < self.dynamic_Nt) and (
                                     dynamic_time[count + t] - dynamic_time[t]
-                                ) < self.min_time_interval[0]:
+                                ) < self.min_time_interval:
                                     # surro_idx gets the index of the current time point
                                     surro_idx = (
                                         self.n_static_measurements
@@ -1849,8 +1864,13 @@ class MeasurementOptimizer:
         # initialize the model with the binary decision variables
         self._initialize_binary(initial_file_name)
 
-        # warmstart function initializes the model with all the binary decisions values stored in the model
-        self.customized_warmstart()
+        if obj == ObjectiveLib.A:
+            # warmstart function initializes the model with all the binary decisions values stored in the model
+            # use warmstart but without initializing grey-box block
+            self.customized_warmstart(grey_box=False)
+        else:
+            # use warmstart with grey-box block
+            self.customized_warmstart(grey_box=True)
 
     def update_budget(self, budget_opt):
         """
@@ -1998,9 +2018,9 @@ class MeasurementOptimizer:
         # initialize m.if_install_dynamic with the value calculated
         # loop over DCM index
         for i in self.mod.dim_dynamic:
-            self.mod.if_install_dynamic = dynamic_install_init[i]
+            self.mod.if_install_dynamic[i] = dynamic_install_init[i-self.n_static_measurements]
 
-    def customized_warmstart(self):
+    def customized_warmstart(self, grey_box=True):
         """
         This is the warmstart function provided to MindtPy 
         It is called every mindtpy iteration, after solving MILP master problem, before solving the fixed NLP problem 
@@ -2095,7 +2115,7 @@ class MeasurementOptimizer:
 
         # add the FIM small diagonal element to FIM to be consistent
         for i in range(self.sens_info.n_parameters):
-            new_fim[i][i] += self.mod.fim_diagonal_small_element
+            new_fim[i][i] += self.fim_diagonal_small_element
 
         # initialize grey-box module
         # loop over parameters
@@ -2106,17 +2126,21 @@ class MeasurementOptimizer:
                 if a <= b:
                     self.mod.total_fim[a, b].value = new_fim[a][b]
 
-                    # grey-box uses a tuple as the input name
-                    grey_box_name = (a, b)
-                    # initialize grey-box value
-                    self.mod.my_block.egb.inputs[grey_box_name] = new_fim[a][b]
+                    # if D-optimality: 
+                    if grey_box:
+                        # grey-box uses a tuple as the input name
+                        grey_box_name = (a, b)
+                        # initialize grey-box value
+                        self.mod.my_block.egb.inputs[grey_box_name] = new_fim[a][b]
 
         # initialize determinant
         # use slogdet to avoid ill-conditioning issue
         _, logdet = np.linalg.slogdet(new_fim)
 
-        # initialize grey-box module output
-        self.mod.my_block.egb.outputs["log_det"] = logdet
+        # if D-optimality
+        if grey_box: 
+            # initialize grey-box module output
+            self.mod.my_block.egb.outputs["log_det"] = logdet
 
         if self.optimize_print_level >= 1:
             print("Warmstart initialize FIM with: ", new_fim)
@@ -2130,7 +2154,7 @@ class MeasurementOptimizer:
             """
             return sum(
                 m.cov_y[i, i].value
-                for i in range(m.n_static_measurements, m.num_measure_dynamic_flatten)
+                for i in range(self.n_static_measurements, self.num_measure_dynamic_flatten)
             )
 
         def total_exp(m):
@@ -2138,7 +2162,7 @@ class MeasurementOptimizer:
             This value is for initializing integer cut
             """
             return sum(
-                m.cov_y[i, i].value for i in range(m.num_measure_dynamic_flatten)
+                m.cov_y[i, i].value for i in range(self.num_measure_dynamic_flatten)
             )
 
         ### cost constraints
@@ -2147,7 +2171,7 @@ class MeasurementOptimizer:
             cost = static-cost measurement cost + dynamic-cost measurement installation cost + dynamic-cost meausrement timepoint cost 
             """
             return sum(
-                m.cov_y[i, i].value * self.cost_list[i] for i in self.n_responses
+                m.cov_y[i, i].value * self.cost_list[i] for i in range(self.num_measure_dynamic_flatten)
             ) + sum(
                 m.if_install_dynamic[j].value
                 * self.dynamic_install_cost[j - self.n_static_measurements]
