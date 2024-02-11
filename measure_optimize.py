@@ -1863,9 +1863,11 @@ class MeasurementOptimizer:
         initial_file_name = self._locate_initial_file(budget)
         # initialize the model with the binary decision variables
         self._initialize_binary(initial_file_name)
-
+        
+        # store this for later use; or we need to input this again for update_budget
+        self.obj = obj 
+        # warmstart function initializes the model with all the binary decisions values stored in the model
         if obj == ObjectiveLib.A:
-            # warmstart function initializes the model with all the binary decisions values stored in the model
             # use warmstart but without initializing grey-box block
             self.customized_warmstart(grey_box=False)
         else:
@@ -1889,8 +1891,13 @@ class MeasurementOptimizer:
         # initialize the model with the binary decision variables
         self._initialize_binary(initial_file_name)
 
-        # warmstart function initializes the model with all the binary decisions values stored in the model
-        self.customized_warmstart()
+        if self.obj == ObjectiveLib.A:
+            # warmstart function initializes the model with all the binary decisions values stored in the model
+            # use warmstart but without initializing grey-box block
+            self.customized_warmstart(grey_box=False)
+        else:
+            # use warmstart with grey-box block
+            self.customized_warmstart(grey_box=True)
 
     def extract_store_sol(self, budget_opt, store_name):
         """
@@ -1947,6 +1954,7 @@ class MeasurementOptimizer:
         ## find if there has been a original solution for the current budget
         if budget in self.curr_res_list:  # use an existed initial solutioon
             y_init_file = self.curr_res_list[budget]
+            curr_budget = budget 
 
         else:
             # if not, find the closest budget, and use this as the initial point
@@ -1959,7 +1967,8 @@ class MeasurementOptimizer:
                 if abs(i - budget) < curr_min_diff:
                     curr_min_diff = abs(i - budget)
                     curr_budget = i
-
+        
+        if self.precompute_print_level >= 1:
             print("using solution at", curr_budget, " too initialize")
 
         # assign solution file names, and FIM file names
@@ -1995,7 +2004,7 @@ class MeasurementOptimizer:
         for a in range(self.num_measure_dynamic_flatten):
             # cov_y only have the upper triangle part since solution matrix is symmetric
             for b in range(a, self.num_measure_dynamic_flatten):
-                self.mod.cov_y[a, b] = init_cov_y[i][j]
+                self.mod.cov_y[a, b] = init_cov_y[a][b]
 
         # initialize total manual number. This is not needed since it is initialized by warmstart function
         # kept for now
@@ -2094,6 +2103,8 @@ class MeasurementOptimizer:
                     # FIM is symmetric, FIM[a,b] == FIM[b,a]
                     new_fim[a, b] = dynamic_initial_element
                     new_fim[b, a] = dynamic_initial_element
+
+        print("warmstart FIM:", new_fim)
 
         # initialize determinant
         # use slogdet to avoid ill-conditioning issue
