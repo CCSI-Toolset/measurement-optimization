@@ -1660,21 +1660,21 @@ class MeasurementOptimizer:
             # copy solver options
             for k, v in additional_options.items():
                 solver.config.options[k] = v
-            solver.solve(self.mod, tee=True)
+            results = solver.solve(self.mod, tee=True)
 
         elif not mip_option and objective == ObjectiveLib.A:
-            # solver = pyo.SolverFactory('ipopt')
-            # solver.options['linear_solver'] = "ma57"
-            # solver.solve(mod, tee=True)
+            solver = pyo.SolverFactory('ipopt')
+            solver.options['linear_solver'] = "ma57"
+            results = solver.solve(self.mod, tee=True)
 
-            solver = pyo.SolverFactory("gurobi", solver_io="python")
-            solver.options["mipgap"] = 0.1
-            solver.solve(self.mod, tee=True)
+            #solver = pyo.SolverFactory("gurobi", solver_io="python")
+            #solver.options["mipgap"] = 0.1
+            # results = solver.solve(self.mod, tee=True)
 
         elif mip_option and objective == ObjectiveLib.A:
             solver = pyo.SolverFactory("gurobi", solver_io="python")
             # solver.options['mipgap'] = 0.1
-            solver.solve(self.mod, tee=True)
+            results = solver.solve(self.mod, tee=True)
 
         elif not mip_option and objective == ObjectiveLib.D:
             solver = pyo.SolverFactory("cyipopt")
@@ -1696,7 +1696,7 @@ class MeasurementOptimizer:
             # copy solver options
             for k, v in additional_options.items():
                 solver.config.options[k] = v
-            solver.solve(self.mod, tee=True)
+            results = solver.solve(self.mod, tee=True)
 
         elif mip_option and objective == ObjectiveLib.D:
 
@@ -1907,14 +1907,14 @@ class MeasurementOptimizer:
         )
         for i in range(self.sens_info.n_parameters):
             for j in range(i, self.sens_info.n_parameters):
-                fim_result[i, j] = fim_result[j, i] = pyo.value(self.mod.TotalFIM[i, j])
+                fim_result[i, j] = fim_result[j, i] = pyo.value(self.mod.total_fim[i, j])
 
         print(fim_result)
         print("trace:", np.trace(fim_result))
         print("det:", np.linalg.det(fim_result))
         print(np.linalg.eigvals(fim_result))
 
-        ans_y, _ = self.extract_solutions(self.mod)
+        ans_y, _ = self.extract_solutions()
         print("pyomo calculated cost:", pyo.value(self.mod.cost))
         print("if install dynamic measurements:")
         print(pyo.value(self.mod.if_install_dynamic[3]))
