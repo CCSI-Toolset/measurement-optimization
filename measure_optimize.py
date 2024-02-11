@@ -1663,13 +1663,13 @@ class MeasurementOptimizer:
             results = solver.solve(self.mod, tee=True)
 
         elif not mip_option and objective == ObjectiveLib.A:
-            solver = pyo.SolverFactory('ipopt')
-            solver.options['linear_solver'] = "ma57"
-            results = solver.solve(self.mod, tee=True)
+            #solver = pyo.SolverFactory('ipopt')
+            #solver.options['linear_solver'] = "ma57"
+            #results = solver.solve(self.mod, tee=True)
 
-            #solver = pyo.SolverFactory("gurobi", solver_io="python")
-            #solver.options["mipgap"] = 0.1
-            # results = solver.solve(self.mod, tee=True)
+            solver = pyo.SolverFactory("gurobi", solver_io="python")
+            solver.options["mipgap"] = 0.1
+            results = solver.solve(self.mod, tee=True)
 
         elif mip_option and objective == ObjectiveLib.A:
             solver = pyo.SolverFactory("gurobi", solver_io="python")
@@ -1860,7 +1860,7 @@ class MeasurementOptimizer:
         )
         # ==== Initialize the model ====
         # locate the binary solution file according to the new budget
-        initial_file_name = self._locate_initial_file(budget)
+        initial_file_name = self._locate_initial_file(budget_opt)
         # initialize the model with the binary decision variables
         self._initialize_binary(initial_file_name)
         
@@ -2104,17 +2104,18 @@ class MeasurementOptimizer:
                     new_fim[a, b] = dynamic_initial_element
                     new_fim[b, a] = dynamic_initial_element
 
-        print("warmstart FIM:", new_fim)
+        if self.precompute_print_level >= 2: 
+            print("warmstart FIM computed by integer decisions:", new_fim)
 
         # initialize determinant
         # use slogdet to avoid ill-conditioning issue
         _, det = np.linalg.slogdet(new_fim)
 
         # if the FIM computed is a rank-deficient matrix, initialize with an identity matrix
-        if det <= -5:
+        if det <= -10:
             if self.optimize_print_level >= 1:
                 print(
-                    "warmstart determinant is too small. Use an identity matrix as FIM"
+                    "warmstart determinant is too small:", det, ". Use an identity matrix as FIM"
                 )
             # update FIM used
             new_fim = np.zeros(
