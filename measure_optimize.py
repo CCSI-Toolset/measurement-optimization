@@ -949,9 +949,6 @@ class MeasurementOptimizer:
     def _continuous_optimization(
         self,
         mixed_integer=False,
-        obj=ObjectiveLib.A,
-        mix_obj=False,
-        alpha=1,
         fixed_nlp=False,
         fix=False,
         upper_diagonal_only=False,
@@ -975,12 +972,6 @@ class MeasurementOptimizer:
         ---------
         :param mixed_integer: boolean 
             not relaxing integer decisions
-        :param obj: Enum
-            "A" or "D" optimality, use trace or determinant of FIM 
-        :param mix_obj: boolean 
-            if True, the objective function is a weighted sum of A- and D-optimality (trace and determinant)
-        :param alpha: float
-            range [0,1], weight of mix_obj. if 1, it is A-optimality. if 0, it is D-optimality 
         :param fixed_nlp: boolean 
             if True, the problem is formulated as a fixed NLP 
         :param fix: boolean
@@ -1139,19 +1130,6 @@ class MeasurementOptimizer:
                     return 0 
                 
             return initial_fim[p, q]
-
-        # this function is used to initialize grey-box model
-        if initial_fim is not None:
-            # Initialize dictionary for grey-box model,
-            # fim_initial_dict is given to greybox module as an argument
-            # key is the input name in grey-box; value is the initial value
-            fim_initial_dict = {}
-            for i in range(self.sens_info.n_parameters):
-                for j in range(i, self.sens_info.n_parameters):
-                    str_name = (i, j)
-                    fim_initial_dict[str_name] = initial_fim[i, j]
-
-        
 
         if self.optimize_print_level >= 2:
             print("FIM is initialized with:", initial_fim)
@@ -1320,13 +1298,7 @@ class MeasurementOptimizer:
                 m.cov_y[j, j] for j in range(start, end)
             )
 
-        # set up design criterion
-        def compute_trace(m):
-            """compute trace 
-            trace = sum(diag(M))
-            """
-            sum_x = sum(m.total_fim[j, j] for j in m.dim_fim)
-            return sum_x
+        
 
         # add constraints depending on if the FIM is defined as half triangle or all
         if upper_diagonal_only:
@@ -1497,20 +1469,49 @@ class MeasurementOptimizer:
             # make total cost < budget
             m.budget_limit = pyo.Constraint(rule=cost_limit)
 
+            # add model to object. This model lacks objective function which will be added separately later
+            self.mod = m
+
+
+    def _add_objective(self, 
+        obj=ObjectiveLib.A,
+        mix_obj=False,
+        alpha=1,):
+        """
+        Add objective function to the model. 
+
+        This function is built for a consideration to easily add other objective functions 
+        since this is a comparatively large code module.
+
+        Arguments
+        ---------
+        :param obj: Enum
+            "A" or "D" optimality, use trace or determinant of FIM 
+        :param mix_obj: boolean 
+            if True, the objective function is a weighted sum of A- and D-optimality (trace and determinant)
+        :param alpha: float
+            range [0,1], weight of mix_obj. if 1, it is A-optimality. if 0, it is D-optimality 
+        """
+
+        # set up design criterion
+        def compute_trace(m):
+            """compute trace 
+            trace = sum(diag(M))
+            """
+            sum_x = sum(m.total_fim[j, j] for j in m.dim_fim)
+            return sum_x
+
         # set objective
         if obj == ObjectiveLib.A:  # A-optimailty
-            m.Obj = pyo.Objective(rule=compute_trace, sense=pyo.maximize)
+            self.mod.Obj = pyo.Objective(rule=compute_trace, sense=pyo.maximize)
 
         elif obj == ObjectiveLib.D:  # D-optimality
 
             def _model_i(b):
                 # build grey-box module
-                self._build_model_external(b, fim_init=fim_initial_dict)
+                self._build_model_external(b)
 
-            m.my_block = pyo.Block(rule=_model_i)
-
-            if self.print_level >= 2:
-                print("Pyomo creates grey-box with initial FIM:", fim_initial_dict)
+            self.mod.my_block = pyo.Block(rule=_model_i)
 
             # loop over parameters
             for i in range(self.sens_info.n_parameters):
@@ -1523,38 +1524,24 @@ class MeasurementOptimizer:
                         return m.total_fim[i, j] == m.my_block.egb.inputs[(i, j)]
 
                     con_name = "con" + str(i) + str(j)
-                    m.add_component(con_name, pyo.Constraint(expr=eq_fim))
-
-            # initialize log det in grey-box module. Important.
-            _, m.my_block.egb.outputs["log_det"] = np.linalg.slogdet(
-                np.asarray(initial_fim)
-            )
-
-            if self.print_level >= 2:
-                print(
-                    "Pyomo initializes grey-box output log_det as:",
-                    np.linalg.slogdet(np.asarray(initial_fim))[1],
-                )
+                    self.mod.add_component(con_name, pyo.Constraint(expr=eq_fim))
 
             # add objective
             # if mix_obj, we use a weighted sum of A- and D-optimality
             if mix_obj:
-                m.trace = pyo.Expression(rule=compute_trace(m))
-                m.logdet = pyo.Expression(rule=m.my_block.egb.outputs["log_det"])
+                self.mod.trace = pyo.Expression(rule=compute_trace)
+                self.mod.logdet = pyo.Expression(rule=m.my_block.egb.outputs["log_det"])
                 # obj is a weighted sum, alpha in [0,1] is the weight of A-optimality
                 # when alpha=0, it mathematically equals to D-opt, when alpha=1, A-opt
-                m.Obj = pyo.Objective(
-                    expr=m.logdet + alpha * m.trace, sense=pyo.maximize
+                self.mod.Obj = pyo.Objective(
+                    expr=self.mod.logdet + alpha * self.mod.trace, sense=pyo.maximize
                 )
 
             else:
                 # maximize logdet obj
-                m.Obj = pyo.Objective(
-                    expr=m.my_block.egb.outputs["log_det"], sense=pyo.maximize
+                self.mod.Obj = pyo.Objective(
+                    expr=self.mod.my_block.egb.outputs["log_det"], sense=pyo.maximize
                 )
-
-        # add model to object
-        self.mod = m
 
     def _build_model_external(self, m, fim_init=None):
         """Build the model through grey-box module 
@@ -1834,9 +1821,6 @@ class MeasurementOptimizer:
         # create model and save model to the object
         self._continuous_optimization(
             mixed_integer=mixed_integer,  # if relaxed binary variables
-            obj=obj,  # objective function options, "A" or "D"
-            mix_obj=mix_obj,  # if using a combination of A- and D-optimality
-            alpha=alpha,  # if mix_obj = True, the weight of A-optimality
             fixed_nlp=fixed_nlp,  # if this is a fixed NLP problem
             fix=fix,  # if this is a square problem
             upper_diagonal_only=upper_diagonal_only,  # if we only define upper triangular for symmetric matrices
@@ -1854,6 +1838,13 @@ class MeasurementOptimizer:
             print_level=print_level,
         )  # print level for optimization part
 
+        # add objective function
+        self._add_objective(
+            obj=obj,  # objective function options, "A" or "D"
+            mix_obj=mix_obj,  # if using a combination of A- and D-optimality
+            alpha=alpha,  # if mix_obj = True, the weight of A-optimality
+        )
+
         # store the initialization dictionary
         self.curr_res_list = (
             initial_solution  # dictionary that stores budget: solution file name
@@ -1869,10 +1860,15 @@ class MeasurementOptimizer:
         # warmstart function initializes the model with all the binary decisions values stored in the model
         if obj == ObjectiveLib.A:
             # use warmstart but without initializing grey-box block
-            self.customized_warmstart(grey_box=False)
+            grey_box_opt = False
         else:
-            # use warmstart with grey-box block
-            self.customized_warmstart(grey_box=True)
+            # use warmstart with initializing grey-box block
+            grey_box_opt = True
+            
+        # use warmstart with grey-box block
+        self.customized_warmstart(grey_box=grey_box_opt)
+
+        
 
     def update_budget(self, budget_opt):
         """
@@ -1891,13 +1887,16 @@ class MeasurementOptimizer:
         # initialize the model with the binary decision variables
         self._initialize_binary(initial_file_name)
 
+        # warmstart function initializes the model with all the binary decisions values stored in the model
         if self.obj == ObjectiveLib.A:
-            # warmstart function initializes the model with all the binary decisions values stored in the model
             # use warmstart but without initializing grey-box block
-            self.customized_warmstart(grey_box=False)
+            grey_box_opt = False
         else:
-            # use warmstart with grey-box block
-            self.customized_warmstart(grey_box=True)
+            # use warmstart with initializing grey-box block
+            grey_box_opt = True
+            
+        # use warmstart with grey-box block
+        self.customized_warmstart(grey_box=grey_box_opt)
 
     def extract_store_sol(self, budget_opt, store_name):
         """
