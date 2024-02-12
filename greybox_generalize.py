@@ -18,27 +18,27 @@ class LogDetModel(ExternalGreyBoxModel):
 
         Arguments
         ---------
-        n_parameters: int 
+        n_parameters: int
             Number of parameters in the model. The square symmetric matrix is of shape n_parameters*n_parameters
         initial_fim: dict
             Initial value of the matrix. If None, the identity matrix is used.
-        use_exact_derivatives: bool 
-            If True, the exact derivatives are used. 
+        use_exact_derivatives: bool
+            If True, the exact derivatives are used.
             If False, the finite difference approximation can be used, but not recommended/tested.
         print_level: integer
             0 (default): no extra output
             1: minimal info to indicate if initialized well
-                print the following: 
-                - initial FIM received by the grey-box moduel 
+                print the following:
+                - initial FIM received by the grey-box moduel
             2: intermediate info for debugging
-                print all the level 1 print statements, plus: 
+                print all the level 1 print statements, plus:
                 - the FIM output of the current iteration, both the output as the FIM matrix, and the flattened vector
             3: all details for debugging
                 print all the level 2 print statements, plus:
-                - the log determinant of the FIM output of the current iteration 
-                - the eigen values of the FIM output of the current iteration 
+                - the log determinant of the FIM output of the current iteration
+                - the eigen values of the FIM output of the current iteration
 
-        Return 
+        Return
         ------
         None
         """
@@ -76,18 +76,18 @@ class LogDetModel(ExternalGreyBoxModel):
         return input_name_list
 
     def equality_constraint_names(self):
-        """ Return the names of the equality constraints."""
+        """Return the names of the equality constraints."""
         # no equality constraints
         return []
 
     def output_names(self):
-        """ Return the names of the outputs."""
+        """Return the names of the outputs."""
         return ["log_det"]
 
     def set_output_constraint_multipliers(self, output_con_multiplier_values):
         """
         Set the values of the output constraint multipliers.
-        
+
         Arguments
         ---------
         output_con_multiplier_values: a scalar number for the output constraint multipliers
@@ -100,11 +100,11 @@ class LogDetModel(ExternalGreyBoxModel):
     def finalize_block_construction(self, pyomo_block):
         """
         Finalize the construction of the ExternalGreyBoxBlock.
-        This function initializes the inputs with an initial value 
+        This function initializes the inputs with an initial value
 
         Arguments
         ---------
-        pyomo_block: pass the created pyomo block here 
+        pyomo_block: pass the created pyomo block here
         """
         # ele_to_order map the input position in FIM, like (a,b), to its flattend index
         # for e.g., ele_to_order[(0,0)] = 0
@@ -146,7 +146,7 @@ class LogDetModel(ExternalGreyBoxModel):
     def set_input_values(self, input_values):
         """
         Set the values of the inputs.
-        
+
         Arguments
         ---------
         input_values: input initial values
@@ -192,7 +192,7 @@ class LogDetModel(ExternalGreyBoxModel):
         """
         This function make the flattened inputs back into the shape of an FIM
 
-        Return 
+        Return
         ------
         M: a numpy array containing FIM.
         """

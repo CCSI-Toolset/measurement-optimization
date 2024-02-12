@@ -2,6 +2,7 @@
 Measurement optimization tool 
 @University of Notre Dame
 """
+
 import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
@@ -17,18 +18,18 @@ import pickle
 
 
 class CovarianceStructure(Enum):
-    """Covariance definition 
+    """Covariance definition
     if identity: error covariance matrix is an identity matrix
     if variance: a numpy vector, each element is the corresponding variance, a.k.a. diagonal elements.
-        Shape: Sum(Nt) 
+        Shape: Sum(Nt)
     if time_correlation: a 3D numpy array, each element is the error covariances
         This option assumes covariances not between measurements, but between timepoints for one measurement
         Shape: Nm * (Nt_m * Nt_m)
-    if measure_correlation: a 2D numpy array, covariance matrix for a single time steps 
-        This option assumes the covariances between measurements at the same timestep in a time-invariant way 
+    if measure_correlation: a 2D numpy array, covariance matrix for a single time steps
+        This option assumes the covariances between measurements at the same timestep in a time-invariant way
         Shape: Nm * Nm
-    if time_measure_correlation: a 2D numpy array, covariance matrix for the flattened measurements 
-        Shape: sum(Nt) * sum(Nt) 
+    if time_measure_correlation: a 2D numpy array, covariance matrix for the flattened measurements
+        Shape: sum(Nt) * sum(Nt)
     """
 
     identity = 0
@@ -45,7 +46,7 @@ class CovarianceStructure(Enum):
 class ObjectiveLib(Enum):
     """
     Objective function library
-    
+
     if A: minimize the trace of FIM
     if D: minimize the determinant of FIM
     """
@@ -63,32 +64,32 @@ class SensitivityData:
 
     def __init__(self, filename, Nt) -> None:
         """
-        Read, convert the format, and sotre the sensitivity information (Jacobian). 
+        Read, convert the format, and sotre the sensitivity information (Jacobian).
         Only process a certain format of CSV file.
         Assume every measurement has the same number of time points: Nt
 
         Arguments
         ---------
         :param filename: a string of the csv file name
-        :param Nt: number of timepoints is needed to split Q for each measurement. 
+        :param Nt: number of timepoints is needed to split Q for each measurement.
             Assume all measurements have the same number of time points of Nt.
 
         This csv file should have the following format:
-        columns: parameters to be estimated 
+        columns: parameters to be estimated
         (An extra first column is added for index)
         rows: measurement timepoints
         data: Jacobian values
 
-        The csv file example: 
+        The csv file example:
 
-        Column index  |  Parameter 1 | Parameter 2 |  ...  | Parameter P 
-        measurement 1 |    number    |  number     |  ...  | number   
-        measurement 2 |    number    |  number     |  ...  | number  
+        Column index  |  Parameter 1 | Parameter 2 |  ...  | Parameter P
+        measurement 1 |    number    |  number     |  ...  | number
+        measurement 2 |    number    |  number     |  ...  | number
         ...
-        measurement N |    number    |  number     |  ...  | number   
+        measurement N |    number    |  number     |  ...  | number
 
-        Number according to measurement i, parameter j is 
-        the gradient of measurement i w.r.t parameter j 
+        Number according to measurement i, parameter j is
+        the gradient of measurement i w.r.t parameter j
 
         Returns
         ------
@@ -100,12 +101,12 @@ class SensitivityData:
         self._read_from_csv(filename)
 
     def _read_from_csv(self, filename):
-        """Read Jacobian from csv file 
+        """Read Jacobian from csv file
 
         Arguments
         ---------
         :param filename: a string of the csv file name
-            This csv file structure is explained in the class doc string. 
+            This csv file structure is explained in the class doc string.
 
         Returns
         ------
@@ -130,26 +131,26 @@ class SensitivityData:
 
     def get_jac_list(self, static_measurement_idx, dynamic_measurement_idx):
         """Combine Jacobian Q for each measurement to be in one Jacobian Q.
-        Through _split_jacobian we get a list of lists for Jacobian Q, 
+        Through _split_jacobian we get a list of lists for Jacobian Q,
         each list contains an Nt*n_parameters elements, which is the sensitivity matrix Q for measurement m
 
         We aim to convert this list of arrays to Q, a numpy array containing Jacobian matrix of the shape N_total_m * Np
-        Jacobian Q structure: 
+        Jacobian Q structure:
         [ \partial y1(t1)/ \partial p1, ..., \partial y1(t1)/ \partial pN,
         \partial y1(t2)/ \partial p1, ..., \partial y1(t2)/ \partial pN,
-        ..., 
+        ...,
         \partial y1(tN)/ \partial p1, ..., \partial y1(tN)/ \partial pN,
         \partial y2(t1)/ \partial p1, ..., \partial y2(t1)/ \partial pN,
-        ..., 
-        \partial yN(tN)/ \partial p1, ..., \partial yN(tN)/ \partial pN,] 
+        ...,
+        \partial yN(tN)/ \partial p1, ..., \partial yN(tN)/ \partial pN,]
 
         Arguments
         ---------
-        :param static_measurement_idx: list of the index for static measurements 
+        :param static_measurement_idx: list of the index for static measurements
         :param dynamic_measurement_idx: list of the index for dynamic measurements
-        
+
         Returns
-        ------- 
+        -------
         self.jac: Jacobian information for main class use, a 2D numpy array
         """
 
@@ -227,11 +228,11 @@ class SensitivityData:
 class MeasurementData:
     """
     containing measurement related information.
-    :param name: a list of strings, the measurement names 
+    :param name: a list of strings, the measurement names
     :param jac_index: a list of int, the indices of measurements in the Jacobian matrix
-    :param static_cost: a list of float, the static cost of measurements 
-    :param dynamic_cost: a list of float, the dynamic cost of measurements  
-    :param min_time_interval: float, the minimal time interval between two sampled time points 
+    :param static_cost: a list of float, the static cost of measurements
+    :param dynamic_cost: a list of float, the dynamic cost of measurements
+    :param min_time_interval: float, the minimal time interval between two sampled time points
     :param max_num_sample: int, the maximum number of samples for each measurement
     :param total_max_num_sample: int, the maximum number of samples for all measurements
     """
@@ -262,8 +263,7 @@ class MeasurementData:
                 )
 
     def __post_init__(self):
-        """This is added for error checking. 
-        """
+        """This is added for error checking."""
         # if one input is not the type it is supposed to be, throw error
         self._check_if_input_is_valid()
 
@@ -282,38 +282,38 @@ class MeasurementOptimizer:
         ---------
         :param sens_info: the SensitivityData object
             containing Jacobian matrix jac and the number of timepoints Nt
-            jac contains m lists, m is the number of meausrements 
-            Each list contains an N_t_m*n_parameters elements, which is the sensitivity matrix Q for measurement m 
+            jac contains m lists, m is the number of meausrements
+            Each list contains an N_t_m*n_parameters elements, which is the sensitivity matrix Q for measurement m
         :param measure_info: the MeasurementData object
             containing the string names of measurements, indices of measurements in the Jacobian matrix,
-            the static costs and dynamic costs of the measurements, 
+            the static costs and dynamic costs of the measurements,
             minimal interval time between two sample points, and the maximum number of samples.
         :param error_cov: a numpy array
             defined error covariance matrix here
             if CovarianceStructure.identity: error covariance matrix is an identity matrix
             if CovarianceStructure.variance: a numpy vector, each element is the corresponding variance, a.k.a. diagonal elements.
-                Shape: Sum(Nt) 
+                Shape: Sum(Nt)
             if CovarianceStructure.time_correlation: a 3D numpy array, each element is the error covariances
                 This option assumes covariances not between measurements, but between timepoints for one measurement
                 Shape: Nm * (Nt_m * Nt_m)
-            if CovarianceStructure.measure_correlation: a 2D numpy array, covariance matrix for a single time steps 
-                This option assumes the covariances between measurements at the same timestep in a time-invariant way 
+            if CovarianceStructure.measure_correlation: a 2D numpy array, covariance matrix for a single time steps
+                This option assumes the covariances between measurements at the same timestep in a time-invariant way
                 Shape: Nm * Nm
-            if CovarianceStructure.time_measure_correlation: a 2D numpy array, covariance matrix for the flattened measurements 
-                Shape: sum(Nt) * sum(Nt) 
+            if CovarianceStructure.time_measure_correlation: a 2D numpy array, covariance matrix for the flattened measurements
+                Shape: sum(Nt) * sum(Nt)
         :param: error_opt: CovarianceStructure
             can choose from identity, variance, time_correlation, measure_correlation, time_measure_correlation. See above comments.
         :param print_level: int
-            indicate what statements are printed for debugging at the pre-computation stage 
-            0 (default): no extra printing 
-            1: print to show it is working 
-            2: print for debugging 
-            3: print everything that could help with debugging 
+            indicate what statements are printed for debugging at the pre-computation stage
+            0 (default): no extra printing
+            1: print to show it is working
+            2: print for debugging
+            3: print everything that could help with debugging
 
 
         Returns
         -------
-        None 
+        None
         """
         # print_level received here is for the pre-computation stage
         self.precompute_print_level = print_level
@@ -373,7 +373,7 @@ class MeasurementOptimizer:
         if self.precompute_print_level == 3:
             print("Static-cost measurement idx:", static_measurement_idx)
             print("Dynamic-cost measurement idx:", dynamic_measurement_idx)
-        
+
         # number of SCMs
         self.n_static_measurements = len(static_measurement_idx)
         # SCM indices
@@ -386,8 +386,10 @@ class MeasurementOptimizer:
         self.cost_list = static_cost_measure_info
         # dynamic-cost measurements' cost list
         self.dynamic_cost_measure_info = dynamic_cost_measure_info
-        # get DCM installation costs 
-        self.dynamic_install_cost = [self.measure_info.static_cost[i] for i in dynamic_measurement_idx]
+        # get DCM installation costs
+        self.dynamic_install_cost = [
+            self.measure_info.static_cost[i] for i in dynamic_measurement_idx
+        ]
 
         # parse measurement names
         self.measure_name = self.measure_info.name  # measurement name list
@@ -431,8 +433,7 @@ class MeasurementOptimizer:
                 print("DCMs installation costs:", self.dynamic_cost_measure_info)
 
     def _check_consistent_sens_measure(self):
-        """This function checks if SensitivityData and MeasurementData provide consistent inputs
-        """
+        """This function checks if SensitivityData and MeasurementData provide consistent inputs"""
         # check if the index list of MeasurementData is in the range of SensitivityData
         if (
             max(self.measure_info.jac_index) + 1
@@ -442,21 +443,21 @@ class MeasurementOptimizer:
             )
 
     def _check_sigma(self, error_cov, error_option):
-        """ Check sigma inputs shape and values
+        """Check sigma inputs shape and values
 
         Arguments
         ---------
-        :param error_cov: if error_cov is None, return an identity matrix 
+        :param error_cov: if error_cov is None, return an identity matrix
         option 1: a numpy vector, each element is the corresponding variance, a.k.a. diagonal elements.
-            Shape: Sum(Nt) 
+            Shape: Sum(Nt)
         option 2: a 3D numpy array, each element is the error covariances
             This option assumes covariances not between measurements, but between timepoints for one measurement
             Shape: Nm * (Nt_m * Nt_m)
-        option 3: a 2D numpy array, covariance matrix for a single time steps 
-            This option assumes the covariances between measurements at the same timestep in a time-invariant way 
+        option 3: a 2D numpy array, covariance matrix for a single time steps
+            This option assumes the covariances between measurements at the same timestep in a time-invariant way
             Shape: Nm * Nm
-        option 4: a 2D numpy array, covariance matrix for the flattened measurements 
-            Shape: sum(Nt) * sum(Nt) 
+        option 4: a 2D numpy array, covariance matrix for the flattened measurements
+            Shape: sum(Nt) * sum(Nt)
         :param: error_opt: CovarianceStructure
             can choose from identity, variance, time_correlation, measure_correlation, time_measure_correlation. See above comments.
 
@@ -531,8 +532,8 @@ class MeasurementOptimizer:
                 )
 
     def _dynamic_flatten(self, jac):
-        """Update dynamic flattened matrix index. 
-        Arguments 
+        """Update dynamic flattened matrix index.
+        Arguments
         ---------
         :param jac: Jacobian information for main class use, a 2D array of shape [N_total_meausrements * Np]
 
@@ -575,26 +576,24 @@ class MeasurementOptimizer:
                 if self.precompute_print_level == 3:
                     print("Static-cost measurement idx: ", i)
                 # dynamic_flatten for SCM
-                jacobian_static = [] 
-                # locate head row of the sensitivity for this measurement 
-                head_row = i*self.sens_info.Nt 
+                jacobian_static = []
+                # locate head row of the sensitivity for this measurement
+                head_row = i * self.sens_info.Nt
                 for t in range(self.sens_info.Nt):
-                    jacobian_static.append(jac[head_row+t])
+                    jacobian_static.append(jac[head_row + t])
 
                 jac_dynamic_flatten.append(jacobian_static)
                 # map position index in jac_dynamic_flatten where each measurement starts
                 self.head_pos_dynamic_flatten[i] = count1
                 # store all static measurements index after dynamic_flattening
                 self.static_idx_dynamic_flatten.append(count1)
-                self.dynamic_to_flatten[
-                    count1
-                ] = (
+                self.dynamic_to_flatten[count1] = (
                     []
                 )  # static measurement's dynamic_flatten index corresponds to a list of flattened index
 
                 # flatten
                 for t in range(self.sens_info.Nt):
-                    jac_flatten.append(jac[head_row+t])
+                    jac_flatten.append(jac[head_row + t])
                     if t == 0:
                         self.head_pos_flatten[i] = count2
                     # all static measurements index after flatten
@@ -605,21 +604,19 @@ class MeasurementOptimizer:
 
                 count1 += 1
 
-            elif (
-                i in self.dynamic_measurement_idx
-            ):
+            elif i in self.dynamic_measurement_idx:
                 if self.precompute_print_level == 3:
                     print("Dynamic-cost measurement idx: ", i)
                 # dynamic measurements are flattend for both dynamic_flatten and flatten
-                # locate head row of the sensitivity for this measurement 
-                head_row = i*self.sens_info.Nt 
+                # locate head row of the sensitivity for this measurement
+                head_row = i * self.sens_info.Nt
                 for t in range(self.sens_info.Nt):
-                    jac_dynamic_flatten.append(jac[head_row+t])
+                    jac_dynamic_flatten.append(jac[head_row + t])
                     if t == 0:
                         self.head_pos_dynamic_flatten[i] = count1
                     self.dynamic_idx_dynamic_flatten.append(count1)
 
-                    jac_flatten.append(jac[head_row+t])
+                    jac_flatten.append(jac[head_row + t])
                     if t == 0:
                         self.head_pos_flatten[i] = count2
                     self.dynamic_to_flatten[count1] = count2
@@ -640,34 +637,36 @@ class MeasurementOptimizer:
 
         if self.precompute_print_level >= 2:
             print("Number of binary decisions:", self.num_measure_dynamic_flatten)
-        
-            if self.precompute_print_level ==3: 
-                print("Dimension after dynamic flatten:", self.dynamic_idx_dynamic_flatten)
+
+            if self.precompute_print_level == 3:
+                print(
+                    "Dimension after dynamic flatten:", self.dynamic_idx_dynamic_flatten
+                )
                 print("Dimension after flatten:", self.dynamic_idx_flatten)
 
     def _build_sigma(self, error_cov, error_option):
-        """Build error covariance matrix 
+        """Build error covariance matrix
 
         Arguments
         ---------
-        :param error_cov: if error_cov is None, return an identity matrix 
+        :param error_cov: if error_cov is None, return an identity matrix
         option 1: a numpy vector, each element is the corresponding variance, a.k.a. diagonal elements.
-            Shape: Sum(Nt) 
+            Shape: Sum(Nt)
         option 2: a 3D numpy array, each element is the error covariances
             This option assumes covariances not between measurements, but between timepoints for one measurement
             Shape: Nm * (Nt_m * Nt_m)
-        option 3: a 2D numpy array, covariance matrix for a single time steps 
-            This option assumes the covariances between measurements at the same timestep in a time-invariant way 
+        option 3: a 2D numpy array, covariance matrix for a single time steps
+            This option assumes the covariances between measurements at the same timestep in a time-invariant way
             Shape: Nm * Nm
-        option 4: a 2D numpy array, covariance matrix for the flattened measurements 
-            Shape: sum(Nt) * sum(Nt) 
+        option 4: a 2D numpy array, covariance matrix for the flattened measurements
+            Shape: sum(Nt) * sum(Nt)
         :param: error_opt: CovarianceStructure
             can choose from identity, variance, time_correlation, measure_correlation, time_measure_correlation. See above comments.
 
         Returns
         -------
-        Sigma: a 2D numpy array, covariance matrix for the flattened measurements 
-            Shape: sum(Nt) * sum(Nt) 
+        Sigma: a 2D numpy array, covariance matrix for the flattened measurements
+            Shape: sum(Nt) * sum(Nt)
         """
 
         # initialize error covariance matrix, shape N_all_t * N_all_t
@@ -751,13 +750,13 @@ class MeasurementOptimizer:
 
     def _split_sigma(self, Sigma):
         """Split the error covariance matrix to be used for computation
-        They are split to DCM-DCM (scalar) covariance, DCM-SCM (vector) covariance, SCCM-SCM (matrix) covariance 
+        They are split to DCM-DCM (scalar) covariance, DCM-SCM (vector) covariance, SCCM-SCM (matrix) covariance
         We inverse the Sigma for the computation of FIM
 
         Arguments
         ---------
-        :param Sigma: a 2D numpy array, covariance matrix for the flattened measurements 
-            Shape: sum(Nt) * sum(Nt)  
+        :param Sigma: a 2D numpy array, covariance matrix for the flattened measurements
+            Shape: sum(Nt) * sum(Nt)
 
         Returns
         -------
@@ -796,8 +795,8 @@ class MeasurementOptimizer:
                 sig = np.zeros((self.sens_info.Nt, 1))
                 # row [i, i+Nt_i], col [j]
                 for t in range(self.sens_info.Nt):  # loop over time points
-                    #print(i,j)
-                    #print(t, self.head_pos_flatten[i], self.dynamic_to_flatten[j])
+                    # print(i,j)
+                    # print(t, self.head_pos_flatten[i], self.dynamic_to_flatten[j])
                     sig[t, 0] = Sigma_inv[
                         self.head_pos_flatten[i] + t, self.dynamic_to_flatten[j]
                     ]
@@ -835,7 +834,7 @@ class MeasurementOptimizer:
 
     def assemble_unit_fims(self):
         """
-        compute a list of FIM. 
+        compute a list of FIM.
         unit FIMs include DCM-DCM FIM, DCM-SCM FIM, SCM-SCM FIM
         """
 
@@ -902,7 +901,7 @@ class MeasurementOptimizer:
 
                 # check if unitFIM is symmetric
                 # Note: I removed this function because unit FIM doesn't need to be symmetric
-                #f not np.allclose(unit, unit.T):
+                # f not np.allclose(unit, unit.T):
                 #   if self.precompute_print_level == 3:
                 #       print("Index ",i,j, "has not symmetric FIM:", unit)
                 #   raise ValueError("The unit FIM is not symmetric with index:", i, j)
@@ -916,13 +915,13 @@ class MeasurementOptimizer:
     def _measure_matrix(self, measurement_vector):
         """
         This is a helper function, when giving a vector of solutions, it converts this vector into a 2D array
-        This is needed for validating the solutions after the optimization, 
-        since we only computes the half diagonal of the measurement matrice and flatten it. 
+        This is needed for validating the solutions after the optimization,
+        since we only computes the half diagonal of the measurement matrice and flatten it.
 
         Arguments
         ---------
         :param measurement_vector: a vector of measurement weights solution
-        
+
         Returns
         -------
         measurement_matrix: a full measurement matrix, construct the weights for covariances
@@ -965,25 +964,24 @@ class MeasurementOptimizer:
         fim_diagonal_small_element=0,
         print_level=0,
     ):
-
-        """Continuous optimization problem formulation. 
+        """Continuous optimization problem formulation.
 
         Arguments
         ---------
-        :param mixed_integer: boolean 
+        :param mixed_integer: boolean
             not relaxing integer decisions
-        :param fixed_nlp: boolean 
-            if True, the problem is formulated as a fixed NLP 
+        :param fixed_nlp: boolean
+            if True, the problem is formulated as a fixed NLP
         :param fix: boolean
-            if solving as a square problem or with DOFs 
+            if solving as a square problem or with DOFs
         :param upper_diagonal_only: boolean
-            if using upper_diagonal_only set to define decisions and FIM, or not 
+            if using upper_diagonal_only set to define decisions and FIM, or not
         :param num_dynamic_t_name: list
-            a list of the exact time points for the dynamic-cost measurements time points 
+            a list of the exact time points for the dynamic-cost measurements time points
         :param budget: integer
             total budget
         :param init_cov_y: list of lists
-            initialize decision variables 
+            initialize decision variables
         :param initial_fim: list of lists
             initialize FIM
         :param dynamic_install_initial: list
@@ -993,18 +991,18 @@ class MeasurementOptimizer:
         :param static_dynamic_pair: list of lists
             a list of the name of measurements, that are selected as either dynamic or static measurements.
         :param time_interval_all_dynamic: boolean
-            if True, the minimal time interval applies for all dynamical measurements 
+            if True, the minimal time interval applies for all dynamical measurements
         :param total_manual_num_init: integer
-            initialize the total number of dynamical timepoints selected 
+            initialize the total number of dynamical timepoints selected
         :param cost initial: float
-            initialize the cost 
+            initialize the cost
         :param fim_diagonal_small_element: float
             a small number, default to be 0, to be added to FIM diagonal elements for better convergence
         :param print_level: integer
-            0 (default): no extra printing 
-            1: print to show it is working 
-            2: print for debugging 
-            3: print everything that could help with debugging 
+            0 (default): no extra printing
+            1: print to show it is working
+            2: print for debugging
+            3: print everything that could help with debugging
 
         Returns
         -------
@@ -1023,7 +1021,7 @@ class MeasurementOptimizer:
         m.fim_diagonal_small_element = pyo.Param(
             initialize=fim_diagonal_small_element, mutable=True
         )
-        # this element needs to be stored in object for warmstart function use 
+        # this element needs to be stored in object for warmstart function use
         # because warmstart function won't work for pyomo model component
         self.fim_diagonal_small_element = fim_diagonal_small_element
 
@@ -1038,7 +1036,9 @@ class MeasurementOptimizer:
         # dynamic measurement index number
         # Pyomo model explicitly numbers all of the static measurements first and then all of the dynmaic measurements
         m.dim_dynamic = pyo.Set(
-            initialize=range(self.n_static_measurements, self.sens_info.total_measure_idx)
+            initialize=range(
+                self.n_static_measurements, self.sens_info.total_measure_idx
+            )
         )
         # turn dynamic measurement number of timepoints into a pyomo set
         m.dim_dynamic_t = pyo.Set(initialize=range(self.dynamic_Nt))
@@ -1121,14 +1121,13 @@ class MeasurementOptimizer:
             m.cov_y.fix()
 
         def init_fim(m, p, q):
-            """ initialize FIM
-            """
-            if not initial_fim: # if None, use identity matrix
-                if p==q: 
-                    return 1 
+            """initialize FIM"""
+            if not initial_fim:  # if None, use identity matrix
+                if p == q:
+                    return 1
                 else:
-                    return 0 
-                
+                    return 0
+
             return initial_fim[p, q]
 
         if self.optimize_print_level >= 2:
@@ -1145,7 +1144,7 @@ class MeasurementOptimizer:
             Add constraints to calculate FIM from unit contributions
             FIM = sum(cov_y[i,j]*unit FIM[i,j]) for all i, j in n_responses
 
-            a, b: indices for FIM, iterate in parameter set 
+            a, b: indices for FIM, iterate in parameter set
             """
             if a <= b:
                 summi = 0
@@ -1182,12 +1181,12 @@ class MeasurementOptimizer:
 
         def integer_cut_0_ineq(m):
             """Ensure that at least one measurement or time point is selected
-            integer cut that cuts the solution of all 0  
+            integer cut that cuts the solution of all 0
             """
             return m.total_number_measurements >= 1
 
         def total_dynamic(m):
-            """compute the total number of time points from DCMs are selected 
+            """compute the total number of time points from DCMs are selected
             This is for the inequality constraint of total number of time points from DCMs < total number of measurements limit
             """
             return m.total_number_dynamic_measurements == sum(
@@ -1234,7 +1233,7 @@ class MeasurementOptimizer:
         def symmetry(m, a, b):
             """
             Ensure the symmetry of y matrix.
-            This function is only called if upper_diagonal_only = False. 
+            This function is only called if upper_diagonal_only = False.
             This is only modeled if we model the whole FIM, instead of defining only upper triangle of y
             """
             if a < b:
@@ -1246,7 +1245,7 @@ class MeasurementOptimizer:
         ### cost constraints
         def cost_compute(m):
             """Compute cost
-            cost = static-cost measurement cost + dynamic-cost measurement installation cost + dynamic-cost meausrement timepoint cost 
+            cost = static-cost measurement cost + dynamic-cost measurement installation cost + dynamic-cost meausrement timepoint cost
             """
             static_and_dynamic_cost = sum(
                 m.cov_y[i, i] * self.cost_list[i] for i in m.n_responses
@@ -1259,18 +1258,16 @@ class MeasurementOptimizer:
             return m.cost == static_and_dynamic_cost + dynamic_fixed_cost
 
         def cost_limit(m):
-            """Total cost smaller than the given budget
-            """
+            """Total cost smaller than the given budget"""
             return m.cost <= m.budget
 
         def total_dynamic_con(m):
-            """total number of manual dynamical measurements number
-            """
+            """total number of manual dynamical measurements number"""
             return m.total_number_dynamic_measurements <= self.manual_number
 
         def dynamic_fix_yd(m, i, j):
-            """if the install cost of one dynamical measurements should be considered 
-            If no timepoints are chosen, there is no need to include this installation cost 
+            """if the install cost of one dynamical measurements should be considered
+            If no timepoints are chosen, there is no need to include this installation cost
             """
             # map measurement index i to its dynamic_flatten index
             start = (
@@ -1281,8 +1278,7 @@ class MeasurementOptimizer:
             return m.if_install_dynamic[i] >= m.cov_y[start, start]
 
         def dynamic_fix_yd_con2(m, i):
-            """if the install cost of one dynamical measurements should be considered 
-            """
+            """if the install cost of one dynamical measurements should be considered"""
             # start index is the first time point idx for this measurement
             start = (
                 self.n_static_measurements
@@ -1297,8 +1293,6 @@ class MeasurementOptimizer:
             return m.if_install_dynamic[i] <= sum(
                 m.cov_y[j, j] for j in range(start, end)
             )
-
-        
 
         # add constraints depending on if the FIM is defined as half triangle or all
         if upper_diagonal_only:
@@ -1370,8 +1364,7 @@ class MeasurementOptimizer:
                 for i in range(self.n_dynamic_measurements):
 
                     def dynamic_manual_num(m):
-                        """the timepoints for each dynamical measurement should be smaller than a given limit 
-                        """
+                        """the timepoints for each dynamical measurement should be smaller than a given limit"""
                         start = (
                             self.n_static_measurements + i * self.dynamic_Nt
                         )  # the start index of this dynamical measurement
@@ -1472,30 +1465,31 @@ class MeasurementOptimizer:
             # add model to object. This model lacks objective function which will be added separately later
             self.mod = m
 
-
-    def _add_objective(self, 
+    def _add_objective(
+        self,
         obj=ObjectiveLib.A,
         mix_obj=False,
-        alpha=1,):
+        alpha=1,
+    ):
         """
-        Add objective function to the model. 
+        Add objective function to the model.
 
-        This function is built for a consideration to easily add other objective functions 
+        This function is built for a consideration to easily add other objective functions
         since this is a comparatively large code module.
 
         Arguments
         ---------
         :param obj: Enum
-            "A" or "D" optimality, use trace or determinant of FIM 
-        :param mix_obj: boolean 
+            "A" or "D" optimality, use trace or determinant of FIM
+        :param mix_obj: boolean
             if True, the objective function is a weighted sum of A- and D-optimality (trace and determinant)
         :param alpha: float
-            range [0,1], weight of mix_obj. if 1, it is A-optimality. if 0, it is D-optimality 
+            range [0,1], weight of mix_obj. if 1, it is A-optimality. if 0, it is D-optimality
         """
 
         # set up design criterion
         def compute_trace(m):
-            """compute trace 
+            """compute trace
             trace = sum(diag(M))
             """
             sum_x = sum(m.total_fim[j, j] for j in m.dim_fim)
@@ -1519,8 +1513,7 @@ class MeasurementOptimizer:
                 for j in range(i, self.sens_info.n_parameters):
 
                     def eq_fim(m):
-                        """Make FIM in this model equal to the FIM computed by grey-box. Necessary. 
-                        """
+                        """Make FIM in this model equal to the FIM computed by grey-box. Necessary."""
                         return m.total_fim[i, j] == m.my_block.egb.inputs[(i, j)]
 
                     con_name = "con" + str(i) + str(j)
@@ -1544,11 +1537,11 @@ class MeasurementOptimizer:
                 )
 
     def _build_model_external(self, m, fim_init=None):
-        """Build the model through grey-box module 
+        """Build the model through grey-box module
 
         Arguments
         ---------
-        :param m: a pyomo model 
+        :param m: a pyomo model
         :param fim_init: an array to initialize the FIM value in grey-box model
 
         Return
@@ -1566,9 +1559,9 @@ class MeasurementOptimizer:
 
     def compute_fim(self, measurement_vector):
         """
-        Compute a total FIM given a set of measurement choice solutions 
-        This is a helper function to verify solutions; It is not involved in the optimization part. 
-        Each unit FIM is computed as: 
+        Compute a total FIM given a set of measurement choice solutions
+        This is a helper function to verify solutions; It is not involved in the optimization part.
+        Each unit FIM is computed as:
         FIM = Q1.T@y@Sigma_inv@Q2, Q is Jacobian
 
         Arguments
@@ -1576,7 +1569,7 @@ class MeasurementOptimizer:
         :param measurement_vector: a list of the length of all measurements, each element in [0,1]
             0 indicates this measurement is not selected, 1 indicates selected
             Note: Ensure the order of this list is the same as the order of Q, i.e. [CA(t1), ..., CA(tN), CB(t1), ...]
-        
+
         Return
         ------
         FIM: a numpy array containing the total FIM given this solution
@@ -1618,9 +1611,9 @@ class MeasurementOptimizer:
         Arguments
         ---------
         :mip_option: boolean, if True, it is a mixed-integer problem, otherwise it is a relaxed problem with no integer decisions
-        :objective: Enum, "A" or "D" optimality, use trace or determinant of FIM 
-        :degeneracy_hunter: boolean, when set up to True, use degeneracy hunter to check infeasibility in constraints. For debugging. 
-        
+        :objective: Enum, "A" or "D" optimality, use trace or determinant of FIM
+        :degeneracy_hunter: boolean, when set up to True, use degeneracy hunter to check infeasibility in constraints. For debugging.
+
         Return
         ------
         None
@@ -1650,9 +1643,9 @@ class MeasurementOptimizer:
             results = solver.solve(self.mod, tee=True)
 
         elif not mip_option and objective == ObjectiveLib.A:
-            #solver = pyo.SolverFactory('ipopt')
-            #solver.options['linear_solver'] = "ma57"
-            #results = solver.solve(self.mod, tee=True)
+            # solver = pyo.SolverFactory('ipopt')
+            # solver.options['linear_solver'] = "ma57"
+            # results = solver.solve(self.mod, tee=True)
 
             solver = pyo.SolverFactory("gurobi", solver_io="python")
             solver.options["mipgap"] = 0.1
@@ -1698,7 +1691,7 @@ class MeasurementOptimizer:
                 nlp_solver="cyipopt",
                 calculate_dual_at_solution=True,
                 tee=True,
-                call_before_subproblem_solve=self.customized_warmstart, 
+                call_before_subproblem_solve=self.customized_warmstart,
                 # add_no_good_cuts=True,
                 stalling_limit=1000,
                 iteration_limit=150,
@@ -1764,37 +1757,37 @@ class MeasurementOptimizer:
         print_level=0,
     ):
         """
-        Initialize, formulate, and solve the MO problem. 
-        This function includes two steps: 
+        Initialize, formulate, and solve the MO problem.
+        This function includes two steps:
         1) Create the optimization problem (Pyomo model)
-        2) Initialize the binary variables in the model with initial binary solutions 
-        3) Initialize other variables in the model, computed by the binary variable values 
+        2) Initialize the binary variables in the model with initial binary solutions
+        3) Initialize other variables in the model, computed by the binary variable values
 
-        Arguments 
+        Arguments
         ---------
-        :param budget_opt: budget 
-        :param initial_solution: a dictionary, key: budget, value: initial solution pickle file name 
+        :param budget_opt: budget
+        :param initial_solution: a dictionary, key: budget, value: initial solution pickle file name
             this option stores the available initial solutions with their budgets
-        :param mixed_integer: boolean 
+        :param mixed_integer: boolean
             not relaxing integer decisions
         :param obj: Enum
-            "A" or "D" optimality, use trace or determinant of FIM 
-        :param mix_obj: boolean 
+            "A" or "D" optimality, use trace or determinant of FIM
+        :param mix_obj: boolean
             if True, the objective function is a weighted sum of A- and D-optimality (trace and determinant)
         :param alpha: float
-            range [0,1], weight of mix_obj. if 1, it is A-optimality. if 0, it is D-optimality 
-        :param fixed_nlp: boolean 
-            if True, the problem is formulated as a fixed NLP 
+            range [0,1], weight of mix_obj. if 1, it is A-optimality. if 0, it is D-optimality
+        :param fixed_nlp: boolean
+            if True, the problem is formulated as a fixed NLP
         :param fix: boolean
-            if solving as a square problem or with DOFs 
+            if solving as a square problem or with DOFs
         :param upper_diagonal_only: boolean
-            if using upper_diagonal_only set to define decisions and FIM, or not 
+            if using upper_diagonal_only set to define decisions and FIM, or not
         :param num_dynamic_t_name: list
-            a list of the exact time points for the dynamic-cost measurements time points 
+            a list of the exact time points for the dynamic-cost measurements time points
         :param budget: integer
             total budget
         :param init_cov_y: list of lists
-            initialize decision variables 
+            initialize decision variables
         :param initial_fim: list of lists
             initialize FIM
         :param dynamic_install_initial: list
@@ -1804,18 +1797,18 @@ class MeasurementOptimizer:
         :param static_dynamic_pair: list of lists
             a list of the name of measurements, that are selected as either dynamic or static measurements.
         :param time_interval_all_dynamic: boolean
-            if True, the minimal time interval applies for all dynamical measurements 
+            if True, the minimal time interval applies for all dynamical measurements
         :param total_manual_num_init: integer
-            initialize the total number of dynamical timepoints selected 
+            initialize the total number of dynamical timepoints selected
         :param cost initial: float
-            initialize the cost 
+            initialize the cost
         :param fim_diagonal_small_element: float
             a small number, default to be 0, to be added to FIM diagonal elements for better convergence
         :param print_level: integer
-            0 (default): no extra printing 
-            1: print to show it is working 
-            2: print for debugging 
-            3: print everything that could help with debugging 
+            0 (default): no extra printing
+            1: print to show it is working
+            2: print for debugging
+            3: print everything that could help with debugging
         """
 
         # ==== Create the model ====
@@ -1855,9 +1848,9 @@ class MeasurementOptimizer:
         initial_file_name = self._locate_initial_file(budget_opt)
         # initialize the model with the binary decision variables
         self._initialize_binary(initial_file_name)
-        
+
         # store this for later use; or we need to input this again for update_budget
-        self.obj = obj 
+        self.obj = obj
         # warmstart function initializes the model with all the binary decisions values stored in the model
         if obj == ObjectiveLib.A:
             # use warmstart but without initializing grey-box block
@@ -1865,26 +1858,26 @@ class MeasurementOptimizer:
         else:
             # use warmstart with initializing grey-box block
             grey_box_opt = True
-            
+
         # use warmstart with grey-box block
         self.customized_warmstart(grey_box=grey_box_opt)
 
-        
-
     def update_budget(self, budget_opt):
         """
-        Update the budget of the created model, then initialize the model corresponding to the budget 
+        Update the budget of the created model, then initialize the model corresponding to the budget
 
-        Arguments 
+        Arguments
         ---------
-        budget_opt: new budget 
+        budget_opt: new budget
         """
         # update the budget
         self.mod.budget = budget_opt
 
         # update the initialization according to the new budget
         # locate the binary solution file according to the new budget
-        initial_file_name = self._locate_initial_file(budget_opt,)  # new budget
+        initial_file_name = self._locate_initial_file(
+            budget_opt,
+        )  # new budget
         # initialize the model with the binary decision variables
         self._initialize_binary(initial_file_name)
 
@@ -1895,15 +1888,15 @@ class MeasurementOptimizer:
         else:
             # use warmstart with initializing grey-box block
             grey_box_opt = True
-            
+
         # use warmstart with grey-box block
         self.customized_warmstart(grey_box=grey_box_opt)
 
     def extract_store_sol(self, budget_opt, store_name):
         """
-        Extract the solution from pyomo model, store in two pickles. 
-        First data file (store_name+"_fim_"+budget_opt): pickle, a Nm*Nm numpy array that is the solution of measurements 
-        Second data file (store_name+"_fim_"+budget_opt): pickle, a Np*Np numpy array that is the FIM 
+        Extract the solution from pyomo model, store in two pickles.
+        First data file (store_name+"_fim_"+budget_opt): pickle, a Nm*Nm numpy array that is the solution of measurements
+        Second data file (store_name+"_fim_"+budget_opt): pickle, a Np*Np numpy array that is the FIM
 
         Arguments
         ---------
@@ -1914,7 +1907,9 @@ class MeasurementOptimizer:
         )
         for i in range(self.sens_info.n_parameters):
             for j in range(i, self.sens_info.n_parameters):
-                fim_result[i, j] = fim_result[j, i] = pyo.value(self.mod.total_fim[i, j])
+                fim_result[i, j] = fim_result[j, i] = pyo.value(
+                    self.mod.total_fim[i, j]
+                )
 
         print(fim_result)
         print("trace:", np.trace(fim_result))
@@ -1938,23 +1933,23 @@ class MeasurementOptimizer:
 
     def _locate_initial_file(self, budget):
         """
-        Given the budget, select which initial solution it should use by locating the closest budget that has stored solutions 
-        It selects according to: 
-        1) if this budget has a previous solution, find it, return the file name 
+        Given the budget, select which initial solution it should use by locating the closest budget that has stored solutions
+        It selects according to:
+        1) if this budget has a previous solution, find it, return the file name
         2) if this budget does not have a previous solution, find the closest budget that has a solution, return the file name
-        
-        Arguments 
-        --------
-        budget: budget 
 
-        Return 
+        Arguments
+        --------
+        budget: budget
+
+        Return
         ------
         y_init_file: the file name that contains a previous solution
         """
         ## find if there has been a original solution for the current budget
         if budget in self.curr_res_list:  # use an existed initial solutioon
             y_init_file = self.curr_res_list[budget]
-            curr_budget = budget 
+            curr_budget = budget
 
         else:
             # if not, find the closest budget, and use this as the initial point
@@ -1967,7 +1962,7 @@ class MeasurementOptimizer:
                 if abs(i - budget) < curr_min_diff:
                     curr_min_diff = abs(i - budget)
                     curr_budget = i
-        
+
         if self.precompute_print_level >= 1:
             print("using solution at", curr_budget, " too initialize")
 
@@ -1977,13 +1972,13 @@ class MeasurementOptimizer:
         return y_init_file
 
     def _initialize_binary(self, y_init_file):
-        """ This function initializes all binary variables directly in the created model 
+        """This function initializes all binary variables directly in the created model
 
         Arguments
         ---------
         y_init_file: the file name that contains a previous solution
 
-        Return 
+        Return
         ------
         None. self.mod is updated with initial values for all binary decisions
         """
@@ -2027,17 +2022,19 @@ class MeasurementOptimizer:
         # initialize m.if_install_dynamic with the value calculated
         # loop over DCM index
         for i in self.mod.dim_dynamic:
-            self.mod.if_install_dynamic[i] = dynamic_install_init[i-self.n_static_measurements]
+            self.mod.if_install_dynamic[i] = dynamic_install_init[
+                i - self.n_static_measurements
+            ]
 
     def customized_warmstart(self, grey_box=True):
         """
-        This is the warmstart function provided to MindtPy 
-        It is called every mindtpy iteration, after solving MILP master problem, before solving the fixed NLP problem 
+        This is the warmstart function provided to MindtPy
+        It is called every mindtpy iteration, after solving MILP master problem, before solving the fixed NLP problem
         This function initializes all continuous variables in the model given the integer decision values
 
-        Return 
+        Return
         -----
-        None. Initialize all continuous variables of this model in-place. 
+        None. Initialize all continuous variables of this model in-place.
         """
         # new_fim is the FIM computed with the given integer solution
         # initialize new_fim
@@ -2059,7 +2056,7 @@ class MeasurementOptimizer:
             FIM = sum(cov_y[i,j]*unit FIM[i,j]) for all i, j in n_responses
             Only compute the upper triangle part since FIM is symmetric
 
-            a, b: indices for FIM, iterate in parameter set 
+            a, b: indices for FIM, iterate in parameter set
             """
             # Only compute the upper triangle part since FIM is symmetric
             if a <= b:
@@ -2104,7 +2101,7 @@ class MeasurementOptimizer:
                     new_fim[a, b] = dynamic_initial_element
                     new_fim[b, a] = dynamic_initial_element
 
-        if self.precompute_print_level >= 2: 
+        if self.precompute_print_level >= 2:
             print("warmstart FIM computed by integer decisions:", new_fim)
 
         # initialize determinant
@@ -2115,7 +2112,9 @@ class MeasurementOptimizer:
         if det <= -10:
             if self.optimize_print_level >= 1:
                 print(
-                    "warmstart determinant is too small:", det, ". Use an identity matrix as FIM"
+                    "warmstart determinant is too small:",
+                    det,
+                    ". Use an identity matrix as FIM",
                 )
             # update FIM used
             new_fim = np.zeros(
@@ -2138,7 +2137,7 @@ class MeasurementOptimizer:
                 if a <= b:
                     self.mod.total_fim[a, b].value = new_fim[a][b]
 
-                    # if D-optimality: 
+                    # if D-optimality:
                     if grey_box:
                         # grey-box uses a tuple as the input name
                         grey_box_name = (a, b)
@@ -2150,7 +2149,7 @@ class MeasurementOptimizer:
         _, logdet = np.linalg.slogdet(new_fim)
 
         # if D-optimality
-        if grey_box: 
+        if grey_box:
             # initialize grey-box module output
             self.mod.my_block.egb.outputs["log_det"] = logdet
 
@@ -2166,7 +2165,9 @@ class MeasurementOptimizer:
             """
             return sum(
                 m.cov_y[i, i].value
-                for i in range(self.n_static_measurements, self.num_measure_dynamic_flatten)
+                for i in range(
+                    self.n_static_measurements, self.num_measure_dynamic_flatten
+                )
             )
 
         def total_exp(m):
@@ -2180,10 +2181,11 @@ class MeasurementOptimizer:
         ### cost constraints
         def cost_compute(m):
             """Compute cost
-            cost = static-cost measurement cost + dynamic-cost measurement installation cost + dynamic-cost meausrement timepoint cost 
+            cost = static-cost measurement cost + dynamic-cost measurement installation cost + dynamic-cost meausrement timepoint cost
             """
             return sum(
-                m.cov_y[i, i].value * self.cost_list[i] for i in range(self.num_measure_dynamic_flatten)
+                m.cov_y[i, i].value * self.cost_list[i]
+                for i in range(self.num_measure_dynamic_flatten)
             ) + sum(
                 m.if_install_dynamic[j].value
                 * self.dynamic_install_cost[j - self.n_static_measurements]
@@ -2209,15 +2211,15 @@ class MeasurementOptimizer:
 
     def continuous_optimization_cvxpy(self, objective="D", budget=100, solver=None):
         """
-        This optimization problem can also be formulated and solved in the CVXPY framework. 
+        This optimization problem can also be formulated and solved in the CVXPY framework.
         This is a generalization code for CVXPY problems for reference, not currently used for the paper.
-        
+
         Arguments
         ---------
         :param objective: can choose from 'D', 'A', 'E' for now. if defined others or None, use A-optimality.
         :param cost_budget: give a total limit for costs.
         :param solver: default to be MOSEK. Look for CVXPY document for more solver information.
-        
+
         Returns
         -------
         None
@@ -2239,20 +2241,17 @@ class MeasurementOptimizer:
             return fim
 
         def a_opt(y):
-            """A-optimality as OBJ. 
-            """
+            """A-optimality as OBJ."""
             fim = eval_fim(y)
             return cp.trace(fim)
 
         def d_opt(y):
-            """D-optimality as OBJ
-            """
+            """D-optimality as OBJ"""
             fim = eval_fim(y)
             return cp.log_det(fim)
 
         def e_opt(y):
-            """E-optimality as OBJ
-            """
+            """E-optimality as OBJ"""
             fim = eval_fim(y)
             return -cp.lambda_min(fim)
 
@@ -2301,15 +2300,15 @@ class MeasurementOptimizer:
     def extract_solutions(self):
         """
         Extract and show solutions from a solved Pyomo model
-        mod is an argument because we 
+        mod is an argument because we
 
         Arguments
         --------
-        mod: a solved Pyomo model 
+        mod: a solved Pyomo model
 
-        Return 
+        Return
         ------
-        ans_y: a numpy array containing the choice for all measurements 
+        ans_y: a numpy array containing the choice for all measurements
         sol_y: a Nd*Nt numpy array, each row contains the choice for the corresponding DCM at every timepoint
         """
         # ans_y is a numpy array of the shape Nm*Nm
@@ -2371,7 +2370,7 @@ class MeasurementOptimizer:
 
 def print_fim(fim):
     """
-    Analyze one given FIM, this is a helper function after the optimization. 
+    Analyze one given FIM, this is a helper function after the optimization.
 
     Arguments
     ---------

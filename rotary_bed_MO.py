@@ -68,8 +68,8 @@ static_cost = [
     1000,  # ads.T23 (9)
     1000,  # ads.T28 (10)
     7000,  # ads.gas_outlet.z("CO2")
-    7000, # des.gas_outlet.z("CO2")
-] 
+    7000,  # des.gas_outlet.z("CO2")
+]
 
 # define static cost (installaion) for dynamic-cost
 static_cost.extend([100, 100, 500, 500, 500])
@@ -95,24 +95,24 @@ measure_info = MeasurementData(
 # Nt is the number of time points for each measurement
 jac_info = SensitivityData("./RotaryBed/Q3_scale.csv", Nt)
 static_measurement_index = [
-    0, # ads.gas_inlet.F (0)
-    1, # ads.gas_outlet.F (1)
-    2, # ads.gas_outlet.T (2)
-    4, # des.gas_inlet.F (4)
-    5, # des.gas_outlet.F (5)
-    6, # des.gas_outlet.T (6)
-    8, # ads.T19 (8)
-    9, # ads.T23 (9)
-    10, # ads.T28 (10)
-    3, # ads.gas_outlet.z("CO2")
-    7, # des.gas_outlet.z("CO2")
+    0,  # ads.gas_inlet.F (0)
+    1,  # ads.gas_outlet.F (1)
+    2,  # ads.gas_outlet.T (2)
+    4,  # des.gas_inlet.F (4)
+    5,  # des.gas_outlet.F (5)
+    6,  # des.gas_outlet.T (6)
+    8,  # ads.T19 (8)
+    9,  # ads.T23 (9)
+    10,  # ads.T28 (10)
+    3,  # ads.gas_outlet.z("CO2")
+    7,  # des.gas_outlet.z("CO2")
 ]  # the index of CA, CB, CC in the jacobian array, considered as SCM
 dynamic_measurement_index = [
-    3, # ads.gas_outlet.z("CO2")
-    7, # des.gas_outlet.z("CO2")
-    11, # ads.z("CO2",19,10)
-    12, # ads.z("CO2",23,10)
-    13, # ads.z("CO2",28,10)
+    3,  # ads.gas_outlet.z("CO2")
+    7,  # des.gas_outlet.z("CO2")
+    11,  # ads.z("CO2",19,10)
+    12,  # ads.z("CO2",23,10)
+    13,  # ads.z("CO2",28,10)
 ]  # the index of CA, CB, CC in the jacobian array, also considered as DCM
 jac_info.get_jac_list(
     static_measurement_index,  # the index of SCMs in the jacobian array
@@ -125,7 +125,7 @@ calculator = MeasurementOptimizer(
     measure_info,  # MeasurementData object
     error_cov=error_mat,  # error covariance matrix
     error_opt=CovarianceStructure.measure_correlation,  # error covariance options
-    print_level=3 # I use highest here to see all information
+    print_level=3,  # I use highest here to see all information
 )
 
 # calculate a list of unit FIMs
@@ -142,7 +142,7 @@ alpha_opt = 0.9
 sparse_opt = True
 fix_opt = False
 small_element = 0.0001  # the small element added to the diagonal of FIM
-file_store_name = "test_run_" # # this is the file name string 
+file_store_name = "test_run_"  # # this is the file name string
 
 num_dynamic_time = np.linspace(2, 220, Nt)
 
@@ -205,8 +205,8 @@ t1 = time.time()
 # call the optimizer function to formulate the model and solve for the first time
 # optimizer method will 1) create the model and save as self.mod 2) initialize the model
 calculator.optimizer(
-    start_budget, # budget
-    initial_solution, # a collection of initializations
+    start_budget,  # budget
+    initial_solution,  # a collection of initializations
     mixed_integer=mip_option,  # if relaxing integer decisions
     obj=objective,  # objective function options, A or D
     mix_obj=mix_obj_option,  # if mixing A- and D-optimality to be the OF

@@ -129,7 +129,7 @@ calculator = MeasurementOptimizer(
     measure_info,  # MeasurementData object
     error_cov=error_cov,  # error covariance matrix
     error_opt=CovarianceStructure.measure_correlation,  # error covariance options
-    print_level = 3 # I use highest here to see more information
+    print_level=3,  # I use highest here to see more information
 )
 
 # calculate a list of unit FIMs
@@ -214,8 +214,8 @@ t1 = time.time()
 # call the optimizer function to formulate the model and solve for the first time
 # optimizer method will 1) create the model and save as self.mod 2) initialize the model
 calculator.optimizer(
-    start_budget, # budget 
-    initial_solution, # a collection of initializations  
+    start_budget,  # budget
+    initial_solution,  # a collection of initializations
     mixed_integer=mip_option,  # if relaxing integer decisions
     obj=objective,  # objective function options, A or D
     mix_obj=mix_obj_option,  # if mixing A- and D-optimality to be the OF
