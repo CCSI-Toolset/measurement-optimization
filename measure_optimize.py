@@ -1698,6 +1698,7 @@ class MeasurementOptimizer:
                 nlp_solver="cyipopt",
                 calculate_dual_at_solution=True,
                 tee=True,
+                call_before_subproblem_solve=self.customized_warmstart, 
                 # add_no_good_cuts=True,
                 stalling_limit=1000,
                 iteration_limit=150,

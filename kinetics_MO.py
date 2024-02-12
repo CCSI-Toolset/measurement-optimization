@@ -11,6 +11,7 @@ from measure_optimize import (
 import pickle
 import time
 
+
 # set up problem formulation
 
 # number of time points for DCM
@@ -19,7 +20,7 @@ Nt = 8
 # maximum manual measurement number for each measurement
 max_manual_num = 10
 # minimal measurement interval
-min_interval_num = 10
+min_interval_num = 10.0
 # maximum manual measurement number for all measurements
 total_max_manual_num = 10
 
@@ -102,10 +103,11 @@ measure_info = MeasurementData(
     total_max_manual_num,  # maximum number of timepoints for all measurement
 )
 
+
 # create data object to pre-compute Qs
 # read jacobian from the source csv
 # Nt is the number of time points for each measurement
-jac_info = SensitivityData("./kinetics_fim/Q_drop0.csv", Nt)
+jac_info = SensitivityData("./kinetics_source_data/Q_drop0.csv", Nt)
 static_measurement_index = [
     0,
     1,
@@ -127,10 +129,12 @@ calculator = MeasurementOptimizer(
     measure_info,  # MeasurementData object
     error_cov=error_cov,  # error covariance matrix
     error_opt=CovarianceStructure.measure_correlation,  # error covariance options
+    print_level = 3
 )
 
 # calculate a list of unit FIMs
-calculator.fim_computation()
+calculator.assemble_unit_fims()
+
 
 ### MO optimization framework
 
@@ -144,7 +148,7 @@ alpha_opt = 0.9
 sparse_opt = True
 fix_opt = False
 small_element = 0.0001  # the small element added to the diagonal of FIM
-file_store_name = "MINLP_"
+file_store_name = "test_run_"
 
 num_dynamic_time = np.linspace(0, 60, 9)
 
@@ -166,7 +170,7 @@ trial_budget_ranges = budget_ranges[:3]
 # milp_A: initialize with milp_A solutions
 # lp_A: iniitalize with lp_A solution
 # nlp_D: initialize with nlp_D solution
-initializer_option = "milp_A"
+initializer_option = "lp_A"
 
 # ==== initialization strategy ====
 # according to the initializer option, we provide different sets of initialization files
@@ -199,7 +203,7 @@ elif initializer_option == "nlp_D":
 initial_solution = {}
 # loop over budget
 for b in curr_results:
-    initial_solution[b] = file_name_pre + str(b) + file_name_end
+    initial_solution[b] = file_name_pre + str(int(b)) + file_name_end
 
 # ===== run a test for a few budgets =====
 
@@ -210,6 +214,8 @@ t1 = time.time()
 # call the optimizer function to formulate the model and solve for the first time
 # optimizer method will 1) create the model and save as self.mod 2) initialize the model
 calculator.optimizer(
+    start_budget, # budget 
+    initial_solution, # a collection of initializations  
     mixed_integer=mip_option,  # if relaxing integer decisions
     obj=objective,  # objective function options, A or D
     mix_obj=mix_obj_option,  # if mixing A- and D-optimality to be the OF
@@ -220,7 +226,7 @@ calculator.optimizer(
     num_dynamic_t_name=num_dynamic_time,  # number of time points of DCMs
     static_dynamic_pair=static_dynamic,  # if one measurement can be both SCM and DCM
     time_interval_all_dynamic=time_interval_for_all,  # time interval for time points of DCMs
-    FIM_diagonal_small_element=small_element,  # a small element added for FIM diagonals to avoid ill-conditioning
+    fim_diagonal_small_element=small_element,  # a small element added for FIM diagonals to avoid ill-conditioning
     print_level=1,
 )  # print level for optimization part
 # timestamp for solving pyomo model
@@ -232,11 +238,12 @@ print("model and solver wall clock time:", t3 - t1)
 print("solver wall clock time:", t3 - t2)
 calculator.extract_store_sol(start_budget, file_store_name)
 
+
 # loop over all budgets for a test
 for b in trial_budget_ranges[1:]:
     print("====Solving with budget:", b, "====")
     # open the update toggle every time so no need to create model every time
-    calculator.update_budget()
+    calculator.update_budget(b)
     # solve the model
     calculator.solve(mip_option=mip_option, objective=objective)
     # extract and select solutions
@@ -247,7 +254,7 @@ for b in trial_budget_ranges[1:]:
 for b in budget_ranges[3:]:
     print("====Solving with budget:", b, "====")
     # open the update toggle every time so no need to create model every time
-    calculator.update_budget()
+    calculator.update_budget(b)
     # solve the model
     calculator.solve(mip_option=mip_option, objective=objective)
     # extract and select solutions
