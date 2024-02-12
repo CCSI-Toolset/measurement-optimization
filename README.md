@@ -71,8 +71,8 @@ Setup the scripts to reproduce result files and figures from the paper:
 ### Kinetics case study 
 
 - Step 1: run `kinetics_MO.py`
-- Step 2: in line 138 and 139, choose to run the A-optimality or D-optimality, mixed-integer or relaxed problem 
-- Step 3: in line 160, set up the budget ranges as you want to try. The first three budgets will run as a test.
+- Step 2: with `mip_option` and `objective`, choose to run the A-optimality or D-optimality, mixed-integer or relaxed problem 
+- Step 3: with `budget_ranges`, set up the budget ranges as you want to try. The first three budgets will run as a test.
   Suggested ranges: 
 
   In our results, we use the budget range [1000, 5000] with a 100 discretization,
@@ -83,13 +83,13 @@ Setup the scripts to reproduce result files and figures from the paper:
 
   You can choose the same budget ranges, or only a few points of budgets, to run the script.
 
-- Step 4: in line 169, select initial solutions to initialize the problem
+- Step 4: with `initializer_option` and `curr_results`, select initial solutions to initialize the problem, and provide file paths for these solutions
 
   You can choose from: A- and D-optimality, with mixed-integer or continuous options. 
   
 - Step 5: store results for drawing figures
 
-  To do this, in line 147, define the param `file_store_name` with a string you given, for e.g., "MINLP_result_".
+  To do this, define the param `file_store_name` with a string you given, for e.g., "MINLP_result_".
 
   Then both the solutions and the FIM of the results are stored separately.
 
@@ -117,8 +117,8 @@ Setup the scripts to reproduce result files and figures from the paper:
 ### Rotary bed case study 
 
 - Step 1: run `rotary_bed_MO.py`
-- Step 2: in line 142 and 143, choose to run the A-optimality or D-optimality, mixed-integer or relaxed problem 
-- Step 3: in line 164, set up the budget ranges as you want to try. The first three budgets will run as a test.
+- Step 2: with `mip_option` and `objective`, choose to run the A-optimality or D-optimality, mixed-integer or relaxed problem 
+- Step 3: with `budget_ranges`, set up the budget ranges as you want to try. The first three budgets will run as a test.
   Suggested ranges: 
 
   In our results, we use the budget range [1000, 25000] with a 1000 discretization,
@@ -126,13 +126,13 @@ Setup the scripts to reproduce result files and figures from the paper:
 
   You can choose the same budget ranges, or only a few points of budgets, to run the script.
 
-- Step 4: in line 173, select initial solutions to initialize the problem
+- Step 4: with `initializer_option` and `curr_results`, select initial solutions to initialize the problem, and provide file paths for these solutions
 
   You can choose from: A- and D-optimality, with mixed-integer or continuous options. 
   
 - Step 5: store results for drawing figures
 
-  To do this, in line 151, define the param `file_store_name` with a string you given, for e.g., "MINLP_result_".
+  To do this, define the param `file_store_name` with a string you given, for e.g., "MINLP_result_".
 
   Then both the solutions and the FIM of the results are stored separately.
 
