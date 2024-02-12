@@ -123,7 +123,7 @@ class LogDetModel(ExternalGreyBoxModel):
             # loop over parameters from current parameter to end
             for j in range(i, self.n_parameters):
                 # flatten (i,j)
-                ele_to_order[(i, j)] = count, count
+                ele_to_order[(i, j)] = count
                 # this tuple is the position of this input in the FIM
                 str_name = (i, j)
 

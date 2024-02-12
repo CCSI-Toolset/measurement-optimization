@@ -1559,7 +1559,7 @@ class MeasurementOptimizer:
         ex_model = LogDetModel(
             n_parameters=self.sens_info.n_parameters,
             initial_fim=fim_init,
-            print_level=self.print_level,
+            print_level=self.optimize_print_level,
         )
         m.egb = ExternalGreyBoxBlock()
         m.egb.set_external_model(ex_model)
