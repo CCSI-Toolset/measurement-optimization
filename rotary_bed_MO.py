@@ -19,7 +19,7 @@ Nt = 110
 # maximum manual measurement number for each measurement
 max_manual_num = 5
 # minimal measurement interval
-min_interval_num = 10
+min_interval_num = 10.0
 # maximum manual measurement number for all measurements
 total_max_manual_num = 20
 # index of columns of SCM and DCM in Q
@@ -79,13 +79,6 @@ dynamic_cost = [0] * len(static_ind)  # SCM has no installaion costs
 # each dynamic-cost measure costs $ 100 per sample
 dynamic_cost.extend([100] * len(dynamic_ind))  # 100 is the cost of each time point
 
-# define manual number maximum
-# it is extended to the same length as measurements, so it can be one column of DataFrame
-max_manual = [max_manual_num] * num_total_measure
-# define minimal interval time
-# it is extended to the same length as measurements, so it can be one column of DataFrame
-min_time_interval = [min_interval_num] * num_total_measure
-
 ## define MeasurementData object
 measure_info = MeasurementData(
     all_names_strategy3,  # name string
@@ -93,7 +86,7 @@ measure_info = MeasurementData(
     static_cost,  # static costs
     dynamic_cost,  # dynamic costs
     min_interval_num,  # minimal time interval between two timepoints
-    max_manual,  # maximum number of timepoints for each measurement
+    max_manual_num,  # maximum number of timepoints for each measurement
     total_max_manual_num,  # maximum number of timepoints for all measurement
 )
 
@@ -132,10 +125,11 @@ calculator = MeasurementOptimizer(
     measure_info,  # MeasurementData object
     error_cov=error_mat,  # error covariance matrix
     error_opt=CovarianceStructure.measure_correlation,  # error covariance options
+    print_level=3 # I use highest here to see all information
 )
 
 # calculate a list of unit FIMs
-calculator.fim_computation()
+calculator.assemble_unit_fims()
 
 
 ## MO optimization
@@ -148,7 +142,7 @@ alpha_opt = 0.9
 sparse_opt = True
 fix_opt = False
 small_element = 0.0001  # the small element added to the diagonal of FIM
-file_store_name = "MINLP_"
+file_store_name = "test_run_" # # this is the file name string 
 
 num_dynamic_time = np.linspace(2, 220, Nt)
 
@@ -195,10 +189,11 @@ elif initializer_option == "nlp_D":
 
 # initialize the initial solution dict. key: budget. value: initial solution file name
 # this initialization dictionary provides a more organized input format for initialization
+# Note: b can be float, such as 1000.0, but it is stored as 1000, so we int(b)
 initial_solution = {}
 # loop over budget
 for b in curr_results:
-    initial_solution[b] = file_name_pre + str(b) + file_name_end
+    initial_solution[b] = file_name_pre + str(int(b)) + file_name_end
 
 
 # ===== run a test for a few budgets =====
@@ -210,6 +205,8 @@ t1 = time.time()
 # call the optimizer function to formulate the model and solve for the first time
 # optimizer method will 1) create the model and save as self.mod 2) initialize the model
 calculator.optimizer(
+    start_budget, # budget
+    initial_solution, # a collection of initializations
     mixed_integer=mip_option,  # if relaxing integer decisions
     obj=objective,  # objective function options, A or D
     mix_obj=mix_obj_option,  # if mixing A- and D-optimality to be the OF
@@ -237,7 +234,7 @@ calculator.extract_store_sol(start_budget, file_store_name)
 for b in trial_budget_ranges[1:]:
     print("====Solving with budget:", b, "====")
     # open the update toggle every time so no need to create model every time
-    calculator.update_budget()
+    calculator.update_budget(b)
     # solve the model
     calculator.solve(mip_option=mip_option, objective=objective)
     # extract and select solutions
@@ -248,7 +245,7 @@ for b in trial_budget_ranges[1:]:
 for b in budget_ranges[3:]:
     print("====Solving with budget:", b, "====")
     # open the update toggle every time so no need to create model every time
-    calculator.update_budget()
+    calculator.update_budget(b)
     # solve the model
     calculator.solve(mip_option=mip_option, objective=objective)
     # extract and select solutions

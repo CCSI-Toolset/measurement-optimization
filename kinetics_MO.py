@@ -129,7 +129,7 @@ calculator = MeasurementOptimizer(
     measure_info,  # MeasurementData object
     error_cov=error_cov,  # error covariance matrix
     error_opt=CovarianceStructure.measure_correlation,  # error covariance options
-    print_level = 3
+    print_level = 3 # I use highest here to see more information
 )
 
 # calculate a list of unit FIMs
