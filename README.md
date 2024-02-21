@@ -1,4 +1,4 @@
-# Measurement This, Not That: Optimizing the Cost and Model-Based Information Content of Measurements
+# *Measurement This, Not That: Optimizing the Cost and Model-Based Information Content of Measurements*
 
 Authors: Jialu Wang, Zedong Peng, Ryan Hughes, Debangsu Bhattacharyya, David E. Bernal Neira, Alexander W. Dowling 
 
@@ -85,7 +85,7 @@ Setup the scripts to reproduce result files and figures from the paper:
 
 - Step 4: with `initializer_option` and `curr_results`, select initial solutions to initialize the problem, and provide file paths for these solutions
 
-  You can choose from: A- and D-optimality, with mixed-integer or continuous options. 
+  You can choose from: A- and D-optimality, with mixed-integer or continuous options. In the paper, both objective functions and both mixed-integer and continuous frameworks are considered and solved. Refer to Eq. (11) in section 2.3 for the MO problem with mixed-integer and continuous options, Eq. (12), (13) in section 2.4 for A- and D-optimality. 
   
 - Step 5: store results for drawing figures
 
@@ -235,7 +235,7 @@ For A-optimality LP and MILP problems, the `pickle` files store a numpy array of
 
 For D-optimality NLP and MINLP problems, the `pickle` files store a dictionary, where the keys are the budgets. An example is: 
 
-nlp_time={1000: {"t": 0.01, "n": 10}, ..., "5000": {"t": 0.01, "n": 10}}
+`nlp_time={1000: {"t": 0.01, "n": 10}, ..., "5000": {"t": 0.01, "n": 10}}`
 
 For each budget, the value is a dictionary where the key `t` stores the solver time, `n` stores the number of iterations
 
@@ -293,7 +293,7 @@ For A-optimality LP and MILP problems, the `pickle` files store a numpy array of
 
 For D-optimality NLP and MINLP problems, the `pickle` files store a dictionary, where the keys are the budgets. An example is: 
 
-nlp_time={1000: {"t": 0.01, "n": 10}, ..., "5000": {"t": 0.01, "n": 10}}
+`nlp_time={1000: {"t": 0.01, "n": 10}, ..., "5000": {"t": 0.01, "n": 10}}`
 
 For each budget, the value is a dictionary where the key `t` stores the solver time, `n` stores the number of iterations
 
