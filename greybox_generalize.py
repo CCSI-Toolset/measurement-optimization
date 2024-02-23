@@ -21,6 +21,7 @@ class LogDetModel(ExternalGreyBoxModel):
         n_parameters: int
             Number of parameters in the model. The square symmetric matrix is of shape n_parameters*n_parameters
         initial_fim: dict
+            key: tuple (i,j) where i, j are the row, column number of FIM. value: FIM[i,j] 
             Initial value of the matrix. If None, the identity matrix is used.
         use_exact_derivatives: bool
             If True, the exact derivatives are used.
@@ -45,8 +46,9 @@ class LogDetModel(ExternalGreyBoxModel):
         self._use_exact_derivatives = use_exact_derivatives
         self.print_level = print_level
         self.n_parameters = n_parameters
+        # make sure it's integer since this is a number of inputs that shouldn't be fractional
         self.num_input = int(
-            n_parameters + (n_parameters * n_parameters - n_parameters) // 2
+            n_parameters + (n_parameters * n_parameters - n_parameters) / 2
         )
         self.initial_fim = initial_fim
 
@@ -65,7 +67,7 @@ class LogDetModel(ExternalGreyBoxModel):
         ------
         input_name_list: a list of the names of inputs
         """
-        # store the input names strings
+        # store the input names as a tuple 
         input_name_list = []
         # loop over parameters
         for i in range(self.n_parameters):
@@ -125,19 +127,19 @@ class LogDetModel(ExternalGreyBoxModel):
                 # flatten (i,j)
                 ele_to_order[(i, j)] = count
                 # this tuple is the position of this input in the FIM
-                str_name = (i, j)
+                tuple_name = (i, j)
 
                 # if an initial FIM is given, we can initialize with these values
                 if self.initial_fim is not None:
-                    pyomo_block.inputs[str_name].value = self.initial_fim[str_name]
+                    pyomo_block.inputs[tuple_name].value = self.initial_fim[tuple_name]
 
                 # if not given initial FIM, we initialize with an identity matrix
                 else:
                     # identity matrix
                     if i == j:
-                        pyomo_block.inputs[str_name].value = 1
+                        pyomo_block.inputs[tuple_name].value = 1
                     else:
-                        pyomo_block.inputs[str_name].value = 0
+                        pyomo_block.inputs[tuple_name].value = 0
 
                 count += 1
 
@@ -146,11 +148,14 @@ class LogDetModel(ExternalGreyBoxModel):
     def set_input_values(self, input_values):
         """
         Set the values of the inputs.
+        This function refers to the notebook: 
+        https://colab.research.google.com/drive/1VplaeOTes87oSznboZXoz-q5W6gKJ9zZ?usp=sharing
 
         Arguments
         ---------
         input_values: input initial values
         """
+        # see the colab link in the doc string for why this should be a list 
         self._input_values = list(input_values)
 
     def evaluate_equality_constraints(self):
@@ -163,6 +168,8 @@ class LogDetModel(ExternalGreyBoxModel):
         """
         Evaluate the output of the model.
         We call numpy here to compute the logdet of FIM. slogdet is used to avoid ill-conditioning issue
+        This function refers to the notebook: 
+        https://colab.research.google.com/drive/1VplaeOTes87oSznboZXoz-q5W6gKJ9zZ?usp=sharing
 
         Return
         ------
@@ -182,6 +189,7 @@ class LogDetModel(ExternalGreyBoxModel):
                 print("   logdet = ", logdet, "\n")
                 print("Eigvals:", np.linalg.eigvals(M))
 
+        # see the colab link in the doc string for why this should be a array with dtype as float64
         return np.asarray([logdet], dtype=np.float64)
 
     def evaluate_jacobian_equality_constraints(self):
@@ -199,7 +207,6 @@ class LogDetModel(ExternalGreyBoxModel):
         # FIM shape Np*Np
         M = np.zeros((self.n_parameters, self.n_parameters))
         # loop over parameters.
-        # Alternately, ele_to_order only includes the upper triangle.
         # Expand here to be the full matrix.
         for i in range(self.n_parameters):
             for k in range(self.n_parameters):
