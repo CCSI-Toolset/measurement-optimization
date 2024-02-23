@@ -131,7 +131,7 @@ class SensitivityData:
 
     def get_jac_list(self, static_measurement_idx, dynamic_measurement_idx):
         """Combine Jacobian Q for each measurement to be in one Jacobian Q.
-        Through _split_jacobian we get a list of lists for Jacobian Q,
+        Through _split_jacobian we get a numpy array for Jacobian Q,
         each list contains an Nt*n_parameters elements, which is the sensitivity matrix Q for measurement m
 
         We aim to convert this list of arrays to Q, a numpy array containing Jacobian matrix of the shape N_total_m * Np
@@ -546,7 +546,8 @@ class MeasurementOptimizer:
         ### dynamic_flatten: to be decision matrix
         jac_dynamic_flatten = []
         # position index in jac_dynamic_flatten where each measurement starts
-        self.head_pos_dynamic_flatten = {}
+        # key: measurement name. value: its first index in jac_dynamic_flatten
+        self.first_pos_dynamic_flatten = {}
         # all static measurements index after dynamic_flattening
         self.static_idx_dynamic_flatten = []
         self.dynamic_idx_dynamic_flatten = []
@@ -554,7 +555,8 @@ class MeasurementOptimizer:
         ### flatten: flatten all measurement all costs
         jac_flatten = []
         # position index in jac_flatten where each measurement starts
-        self.head_pos_flatten = {}
+        # key: measurement name. value: it first position in jac_flatten
+        self.first_pos_flatten = {}
         # all static measurements index after flatten
         self.static_idx_flatten = []
         # all dynamic measurements index after flatten
@@ -577,14 +579,14 @@ class MeasurementOptimizer:
                     print("Static-cost measurement idx: ", i)
                 # dynamic_flatten for SCM
                 jacobian_static = []
-                # locate head row of the sensitivity for this measurement
-                head_row = i * self.sens_info.Nt
+                # locate first row of the sensitivity for this measurement
+                first_row = i * self.sens_info.Nt
                 for t in range(self.sens_info.Nt):
-                    jacobian_static.append(jac[head_row + t])
+                    jacobian_static.append(jac[first_row + t])
 
                 jac_dynamic_flatten.append(jacobian_static)
                 # map position index in jac_dynamic_flatten where each measurement starts
-                self.head_pos_dynamic_flatten[i] = count1
+                self.first_pos_dynamic_flatten[i] = count1
                 # store all static measurements index after dynamic_flattening
                 self.static_idx_dynamic_flatten.append(count1)
                 self.dynamic_to_flatten[count1] = (
@@ -593,9 +595,9 @@ class MeasurementOptimizer:
 
                 # flatten
                 for t in range(self.sens_info.Nt):
-                    jac_flatten.append(jac[head_row + t])
+                    jac_flatten.append(jac[first_row + t])
                     if t == 0:
-                        self.head_pos_flatten[i] = count2
+                        self.first_pos_flatten[i] = count2
                     # all static measurements index after flatten
                     self.static_idx_flatten.append(count2)
                     # map all timepoints to the dynamic_flatten static index
@@ -608,17 +610,17 @@ class MeasurementOptimizer:
                 if self.precompute_print_level == 3:
                     print("Dynamic-cost measurement idx: ", i)
                 # dynamic measurements are flattend for both dynamic_flatten and flatten
-                # locate head row of the sensitivity for this measurement
-                head_row = i * self.sens_info.Nt
+                # locate first row of the sensitivity for this measurement
+                first_row = i * self.sens_info.Nt
                 for t in range(self.sens_info.Nt):
-                    jac_dynamic_flatten.append(jac[head_row + t])
+                    jac_dynamic_flatten.append(jac[first_row + t])
                     if t == 0:
-                        self.head_pos_dynamic_flatten[i] = count1
+                        self.first_pos_dynamic_flatten[i] = count1
                     self.dynamic_idx_dynamic_flatten.append(count1)
 
-                    jac_flatten.append(jac[head_row + t])
+                    jac_flatten.append(jac[first_row + t])
                     if t == 0:
-                        self.head_pos_flatten[i] = count2
+                        self.first_pos_flatten[i] = count2
                     self.dynamic_to_flatten[count1] = count2
                     count2 += 1
 
@@ -697,7 +699,7 @@ class MeasurementOptimizer:
                 # give the error covariance to Sigma
                 # each measurement has a different time-correlation structure
                 # that is why this is a 3D matrix
-                sigma_i_start = self.head_pos_flatten[i]
+                sigma_i_start = self.first_pos_flatten[i]
                 # loop over all timepoints for measurement i
                 # for each measurement, the time correlation matrix is Nt*Nt
                 for t1 in range(self.sens_info.Nt):
@@ -722,13 +724,13 @@ class MeasurementOptimizer:
                     # find the covariance term
                     cov_ij = error_cov[i][j]
                     # find the starting index for each measurement (each measurement i has Nt entries)
-                    head_i = self.head_pos_flatten[i]
+                    first_i = self.first_pos_flatten[i]
                     # starting index for measurement j
-                    head_j = self.head_pos_flatten[j]
+                    first_j = self.first_pos_flatten[j]
                     # i, j may have different timesteps
                     # we find the corresponding index by locating the starting indices
                     for t in range(self.sens_info.Nt):
-                        Sigma[t + head_i, t + head_j] = cov_ij
+                        Sigma[t + first_i, t + first_j] = cov_ij
 
             if self.precompute_print_level >= 2:
                 print("Error covariance matrix option:", error_option)
@@ -767,6 +769,8 @@ class MeasurementOptimizer:
         Sigma_inv = np.linalg.pinv(Sigma)
         self.Sigma_inv_matrix = Sigma_inv
         # Use a dicionary to store the inverse of sigma as either scalar number, vector, or matrix
+        # key: a tuple (i,j), i, j are the measurement indices in jac_sens. 
+        # value: value of the covariance of these two measurements.
         self.Sigma_inv = {}
 
         # between static and static: (Nt_i+Nt_j)*(Nt_i+Nt_j) matrix
@@ -780,7 +784,7 @@ class MeasurementOptimizer:
                 for ti in range(self.sens_info.Nt):  # loop over time points
                     for tj in range(self.sens_info.Nt):  # loop over time points
                         sig[ti, tj] = Sigma_inv[
-                            self.head_pos_flatten[i] + ti, self.head_pos_flatten[j] + tj
+                            self.first_pos_flatten[i] + ti, self.first_pos_flatten[j] + tj
                         ]
                 self.Sigma_inv[(i, j)] = sig
 
@@ -796,9 +800,9 @@ class MeasurementOptimizer:
                 # row [i, i+Nt_i], col [j]
                 for t in range(self.sens_info.Nt):  # loop over time points
                     # print(i,j)
-                    # print(t, self.head_pos_flatten[i], self.dynamic_to_flatten[j])
+                    # print(t, self.first_pos_flatten[i], self.dynamic_to_flatten[j])
                     sig[t, 0] = Sigma_inv[
-                        self.head_pos_flatten[i] + t, self.dynamic_to_flatten[j]
+                        self.first_pos_flatten[i] + t, self.dynamic_to_flatten[j]
                     ]
                 self.Sigma_inv[(i, j)] = sig
 
@@ -814,7 +818,7 @@ class MeasurementOptimizer:
                 # row [j, j+Nt_j], col [i]
                 for t in range(self.sens_info.Nt):  # loop over time
                     sig[t, 0] = Sigma_inv[
-                        self.head_pos_flatten[j] + t, self.dynamic_to_flatten[i]
+                        self.first_pos_flatten[j] + t, self.dynamic_to_flatten[i]
                     ]
                 self.Sigma_inv[(i, j)] = sig
 
@@ -1091,12 +1095,18 @@ class MeasurementOptimizer:
         # set for FIM
         m.dim_fim_half = pyo.Set(dimen=2, initialize=dim_fim_half_init)
 
-        # if decision variables y are binary
-        if mixed_integer:
-            y_domain = pyo.Binary
-        # if decision variables y are relaxed
-        else:
-            y_domain = pyo.NonNegativeReals
+        def domain(mixed_integer_opt):
+            """If mixed-integer, variable domain should be Binary, else, should be NonNegativeReals.
+            """
+            # if decision variables y are binary
+            if mixed_integer_opt:
+                return pyo.Binary
+            # if decision variables y are relaxed
+            else:
+                pyo.NonNegativeReals
+
+        # assign domain according to the mixed integer option
+        y_domain = domain(mixed_integer)
 
         # if only defining upper triangle of the y matrix
         if upper_diagonal_only:
@@ -1186,7 +1196,8 @@ class MeasurementOptimizer:
             return m.total_number_measurements >= 1
 
         def total_dynamic(m):
-            """compute the total number of time points from DCMs are selected
+            """
+            compute the total number of time points from DCMs are selected
             This is for the inequality constraint of total number of time points from DCMs < total number of measurements limit
             """
             return m.total_number_dynamic_measurements == sum(
@@ -1199,8 +1210,9 @@ class MeasurementOptimizer:
         ### cov_y constraints
         def y_covy1(m, a, b):
             """
+            Eq. 11i in paper 
             cov_y[a,b] indicates if measurement a, b are both selected, i.e. a & b
-            cov_y[a,b] = cov_y[a,a]*cov_y[b,b]. Relax this equation to get cov_y[a,b] <= cov_y[a,a]
+            cov_y[a,b] = cov_y[a,a]*cov_y[b,b]. Relax this equation to get covxwxwxw_y[a,b] <= cov_y[a,a]
             """
             if b > a:
                 return m.cov_y[a, b] <= m.cov_y[a, a]
@@ -1210,6 +1222,7 @@ class MeasurementOptimizer:
 
         def y_covy2(m, a, b):
             """
+            Eq. 11j in paper
             cov_y[a,b] indicates if measurement a, b are both selected, i.e. a & b
             cov_y[a,b] = cov_y[a,a]*cov_y[b,b]. Relax this equation to get cov_y[a,b] <= cov_y[b,b]
             """
@@ -1221,6 +1234,7 @@ class MeasurementOptimizer:
 
         def y_covy3(m, a, b):
             """
+            Eq. 11k in paper 
             cov_y[a,b] indicates if measurement a, b are both selected, i.e. a & b
             cov_y[a,b] = cov_y[a,a]*cov_y[b,b]. Relax this equation to get cov_y[a,b] >= cov_y[a,a]+cov_y[b,b]-1
             """
@@ -1258,11 +1272,15 @@ class MeasurementOptimizer:
             return m.cost == static_and_dynamic_cost + dynamic_fixed_cost
 
         def cost_limit(m):
-            """Total cost smaller than the given budget"""
+            """Total cost smaller than the given budget
+            Eq. 11e in paper
+            """
             return m.cost <= m.budget
 
         def total_dynamic_con(m):
-            """total number of manual dynamical measurements number"""
+            """total number of manual dynamical measurements number
+            Eq. 11f in paper 
+            """
             return m.total_number_dynamic_measurements <= self.manual_number
 
         def dynamic_fix_yd(m, i, j):
@@ -1278,7 +1296,9 @@ class MeasurementOptimizer:
             return m.if_install_dynamic[i] >= m.cov_y[start, start]
 
         def dynamic_fix_yd_con2(m, i):
-            """if the install cost of one dynamical measurements should be considered"""
+            """if the install cost of one dynamical measurements should be considered
+            Eq. 11g in paper
+            """
             # start index is the first time point idx for this measurement
             start = (
                 self.n_static_measurements
@@ -1364,7 +1384,9 @@ class MeasurementOptimizer:
                 for i in range(self.n_dynamic_measurements):
 
                     def dynamic_manual_num(m):
-                        """the timepoints for each dynamical measurement should be smaller than a given limit"""
+                        """the timepoints for each dynamical measurement should be smaller than a given limit
+                        Eq. 11f in paper
+                        """
                         start = (
                             self.n_static_measurements + i * self.dynamic_Nt
                         )  # the start index of this dynamical measurement
@@ -1401,6 +1423,8 @@ class MeasurementOptimizer:
                         # end time is an open end of the region, so another constraint needs to be added to include end_time
                         # if dynamic_time[t]+discretize_time <= end_time+0.1*discretize_time:
                         def discretizer(m):
+                            """Eq. 11h in paper
+                            """
                             sumi = 0
                             count = 0
                             # get the timepoints in this interval
@@ -1603,7 +1627,7 @@ class MeasurementOptimizer:
         return fim
 
     def solve(
-        self, mip_option=False, objective=ObjectiveLib.A, degeneracy_hunter=False
+        self, mip_option=False, objective=ObjectiveLib.A, linear_solver=None, degeneracy_hunter=False
     ):
         """
         Set up solvers, solve the problem, and check the solver status and termination conditions
@@ -1612,19 +1636,22 @@ class MeasurementOptimizer:
         ---------
         :mip_option: boolean, if True, it is a mixed-integer problem, otherwise it is a relaxed problem with no integer decisions
         :objective: Enum, "A" or "D" optimality, use trace or determinant of FIM
+        :linear_solver: string, can give the linear solver name here such as "ma27" and "ma57". If given None, use the default. 
         :degeneracy_hunter: boolean, when set up to True, use degeneracy hunter to check infeasibility in constraints. For debugging.
 
         Return
         ------
         None
         """
+        if linear_solver is not None:
+            linear_solver_setup = {"linear_solver": linear_solver}
+
         if self.fixed_nlp:
             solver = pyo.SolverFactory("cyipopt")
             solver.config.options["hessian_approximation"] = "limited-memory"
             additional_options = {
                 "max_iter": 3000,
                 "output_file": "console_output",
-                "linear_solver": "mumps",
                 # "halt_on_ampl_error": "yes", # this option seems not working for cyipopt
                 "bound_push": 1e-10,
             }
@@ -1640,6 +1667,10 @@ class MeasurementOptimizer:
             # copy solver options
             for k, v in additional_options.items():
                 solver.config.options[k] = v
+            # if set up linear solver
+            if linear_solver is not None:
+                for k, v in linear_solver_setup:
+                    solver.config.options[k] = v 
             results = solver.solve(self.mod, tee=True)
 
         elif not mip_option and objective == ObjectiveLib.A:
@@ -1669,18 +1700,39 @@ class MeasurementOptimizer:
                 additional_options = {
                     "max_iter": 0,
                     "output_file": "console_output",
-                    "linear_solver": "mumps",
                     "bound_push": 1e-6,
                 }
 
             # copy solver options
             for k, v in additional_options.items():
                 solver.config.options[k] = v
+            # if set up linear solver
+            if linear_solver is not None:
+                for k, v in linear_solver_setup:
+                    solver.config.options[k] = v 
             results = solver.solve(self.mod, tee=True)
 
         elif mip_option and objective == ObjectiveLib.D:
 
             solver = pyo.SolverFactory("mindtpy")
+
+            # nlp solver arguments are set up here
+            nlp_solver_options = {
+                        "hessian_approximation": "limited-memory",
+                        "output_file": "console_output",
+                        "max_iter": 3000,
+                        # "halt_on_ampl_error": "yes",
+                        "bound_push": 1e-10,
+                        "warm_start_init_point": "yes",
+                        "warm_start_bound_push": 1e-10,
+                        "warm_start_bound_frac": 1e-10,
+                        "warm_start_slack_bound_frac": 1e-10,
+                        "warm_start_slack_bound_push": 1e-10,
+                        "warm_start_mult_bound_push": 1e-10,
+                    }
+            # add linear solver if needed 
+            if linear_solver is not None: 
+                nlp_solver_options["linear_solver"] = linear_solver
 
             results = solver.solve(
                 self.mod,
@@ -1699,20 +1751,7 @@ class MeasurementOptimizer:
                 mip_solver_args={"options": {"NumericFocus": "3"}},
                 nlp_solver_tee=True,
                 nlp_solver_args={
-                    "options": {
-                        "hessian_approximation": "limited-memory",
-                        "output_file": "console_output",
-                        "linear_solver": "mumps",
-                        "max_iter": 3000,
-                        # "halt_on_ampl_error": "yes",
-                        "bound_push": 1e-10,
-                        "warm_start_init_point": "yes",
-                        "warm_start_bound_push": 1e-10,
-                        "warm_start_bound_frac": 1e-10,
-                        "warm_start_slack_bound_frac": 1e-10,
-                        "warm_start_slack_bound_push": 1e-10,
-                        "warm_start_mult_bound_push": 1e-10,
-                    }
+                    "options": nlp_solver_options
                 },
             )
 
