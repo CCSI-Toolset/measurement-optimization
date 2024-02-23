@@ -15,6 +15,7 @@ from pyomo.contrib.pynumero.interfaces.external_grey_box import (
 from enum import Enum
 from dataclasses import dataclass
 import pickle
+from scipy.spatial import cKDTree
 
 
 class CovarianceStructure(Enum):
@@ -317,6 +318,9 @@ class MeasurementOptimizer:
         """
         # print_level received here is for the pre-computation stage
         self.precompute_print_level = print_level
+        # threshold used to round the fractional number to be integer 
+        self.near_1_threshold = 0.99 
+        self.near_0_threshold = 0.01
 
         ## parse sensitivity info from SensitivityData
         # get total measurement number from the shape of Q
@@ -1518,12 +1522,9 @@ class MeasurementOptimizer:
             """
             sum_x = sum(m.total_fim[j, j] for j in m.dim_fim)
             return sum_x
-
-        # set objective
-        if obj == ObjectiveLib.A:  # A-optimailty
-            self.mod.Obj = pyo.Objective(rule=compute_trace, sense=pyo.maximize)
-
-        elif obj == ObjectiveLib.D:  # D-optimality
+        
+        # set up D-optimality for both mixed-obj or D-optimality
+        if mix_obj or obj == ObjectiveLib.D:  # D-optimality
 
             def _model_i(b):
                 # build grey-box module
@@ -1543,22 +1544,26 @@ class MeasurementOptimizer:
                     con_name = "con" + str(i) + str(j)
                     self.mod.add_component(con_name, pyo.Constraint(expr=eq_fim))
 
-            # add objective
-            # if mix_obj, we use a weighted sum of A- and D-optimality
-            if mix_obj:
-                self.mod.trace = pyo.Expression(rule=compute_trace)
-                self.mod.logdet = pyo.Expression(rule=m.my_block.egb.outputs["log_det"])
-                # obj is a weighted sum, alpha in [0,1] is the weight of A-optimality
-                # when alpha=0, it mathematically equals to D-opt, when alpha=1, A-opt
-                self.mod.Obj = pyo.Objective(
-                    expr=self.mod.logdet + alpha * self.mod.trace, sense=pyo.maximize
-                )
 
-            else:
-                # maximize logdet obj
-                self.mod.Obj = pyo.Objective(
-                    expr=self.mod.my_block.egb.outputs["log_det"], sense=pyo.maximize
-                )
+        # add objective
+        # if mix_obj, we use a weighted sum of A- and D-optimality
+        if mix_obj:
+            self.mod.trace = pyo.Expression(rule=compute_trace)
+            self.mod.logdet = pyo.Expression(rule=m.my_block.egb.outputs["log_det"])
+            # obj is a weighted sum, alpha in [0,1] is the weight of A-optimality
+            # when alpha=0, it mathematically equals to D-opt, when alpha=1, A-opt
+            self.mod.Obj = pyo.Objective(
+                expr=self.mod.logdet + alpha * self.mod.trace, sense=pyo.maximize
+            )
+
+        # set objective
+        elif obj == ObjectiveLib.A:  # A-optimailty
+            self.mod.Obj = pyo.Objective(rule=compute_trace, sense=pyo.maximize)
+
+        elif obj == ObjectiveLib.D:  # D-optimality
+            self.mod.Obj = pyo.Objective(
+                expr=self.mod.my_block.egb.outputs["log_det"], sense=pyo.maximize
+            )
 
     def _build_model_external(self, m, fim_init=None):
         """Build the model through grey-box module
@@ -1986,27 +1991,18 @@ class MeasurementOptimizer:
         y_init_file: the file name that contains a previous solution
         """
         ## find if there has been a original solution for the current budget
-        if budget in self.curr_res_list:  # use an existed initial solutioon
-            y_init_file = self.curr_res_list[budget]
-            curr_budget = budget
-
-        else:
-            # if not, find the closest budget, and use this as the initial point
-            curr_min_diff = np.inf  # current minimal budget difference
-            curr_budget = max(list(self.curr_res_list.keys()))  # starting point
-
-            # find the existing budget that minimize curr_min_diff
-            for i in list(self.curr_res_list.keys()):
-                # if we found an existing budget that is closer to the given budget
-                if abs(i - budget) < curr_min_diff:
-                    curr_min_diff = abs(i - budget)
-                    curr_budget = i
+        # create tree 
+        available_budget = list(self.curr_res_list.keys())
+        # cKDTree only accepts two-dimensional data; but we search in 1D array. So reshape like this
+        tree = cKDTree(np.array([available_budget]).reshape(-1,1))
+        # query nearest neighbor. k=1 means the nearest. 
+        _, nearest_idx = tree.query([budget], k=1)
 
         if self.precompute_print_level >= 1:
-            print("using solution at", curr_budget, " too initialize")
+            print("using solution at", budget, " too initialize")
 
         # assign solution file names, and FIM file names
-        y_init_file = self.curr_res_list[curr_budget]
+        y_init_file = self.curr_res_list[nearest_idx]
 
         return y_init_file
 
@@ -2028,7 +2024,7 @@ class MeasurementOptimizer:
         # Round possible float solution to be integer
         for i in range(self.num_measure_dynamic_flatten):
             for j in range(self.num_measure_dynamic_flatten):
-                if init_cov_y[i][j] > 0.99:
+                if init_cov_y[i][j] > self.near_1_threshold:
                     init_cov_y[i][j] = int(1)
                 else:
                     init_cov_y[i][j] = int(0)
@@ -2051,7 +2047,7 @@ class MeasurementOptimizer:
         # round solutions
         # if floating solutions, if value > 0.01, we count it as an integer decision that is 1 or positive
         for i in range(self.n_static_measurements, self.num_measure_dynamic_flatten):
-            if init_cov_y[i][i] > 0.01:
+            if init_cov_y[i][i] > self.near_0_threshold:
                 # total_manual_init += 1  # kept this line for now
 
                 # identify which DCM this timepoint belongs to, turn the installation flag to be positive
