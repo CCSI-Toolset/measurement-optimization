@@ -1105,7 +1105,7 @@ class MeasurementOptimizer:
                 return pyo.Binary
             # if decision variables y are relaxed
             else:
-                pyo.NonNegativeReals
+                return pyo.NonNegativeReals
 
         # assign domain according to the mixed integer option
         y_domain = domain(mixed_integer)
@@ -1997,10 +1997,10 @@ class MeasurementOptimizer:
         _, nearest_idx = tree.query([budget], k=1)
 
         if self.precompute_print_level >= 1:
-            print("using solution at", budget, " too initialize")
+            print("using solution at", available_budget[nearest_idx], " too initialize")
 
         # assign solution file names, and FIM file names
-        y_init_file = self.curr_res_list[nearest_idx]
+        y_init_file = self.curr_res_list[available_budget[nearest_idx]]
 
         return y_init_file
 

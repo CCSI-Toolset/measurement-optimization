@@ -184,7 +184,7 @@ if rerun_all_paper_results:
     budget_ranges = np.linspace(1000, 5000, 11)
 else:
     # give a trial ranges for a test; we use the first 3 budgets in budget_ranges
-    trial_budget_ranges = [1000, 2200, 3800]
+    budget_ranges = [1000, 2200, 3800]
 
 # initialize with A-opt. MILP solutions
 # choose what solutions to initialize from:
@@ -230,7 +230,7 @@ for b in curr_results:
 # ===== run a test for a few budgets =====
 
 # use a starting budget to create the model
-start_budget = trial_budget_ranges[0]
+start_budget = budget_ranges[0]
 # timestamp for creating pyomo model
 t1 = time.time()
 # call the optimizer function to formulate the model and solve for the first time
