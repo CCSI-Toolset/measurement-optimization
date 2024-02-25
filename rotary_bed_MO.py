@@ -12,7 +12,7 @@ import pickle
 import time
 
 
-# set up problem formulation
+### STEP 1: set up measurement cost strategy 
 
 # number of time points for DCM
 Nt = 110
@@ -23,7 +23,20 @@ min_interval_num = 10.0
 # maximum manual measurement number for all measurements
 total_max_manual_num = 20
 # index of columns of SCM and DCM in Q
-static_ind = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+static_ind = [
+    0,  # ads.gas_inlet.F (0)
+    1,  # ads.gas_outlet.F (1)
+    2,  # ads.gas_outlet.T (2)
+    3,  # des.gas_inlet.F (4)
+    4,  # des.gas_outlet.F (5)
+    5,  # des.gas_outlet.T (6)
+    6,  # ads.T19 (8)
+    7,  # ads.T23 (9)
+    8,  # ads.T28 (10)
+    9,  # ads.gas_outlet.z("CO2")
+    10,  # des.gas_outlet.z("CO2")
+]
+# ads.gas_outlet.z("CO2") # des.gas_outlet.z("CO2") # ads.z19 # ads.z23 # ads.z28
 dynamic_ind = [11, 12, 13, 14, 15]
 # this index is the number of SCM + nubmer of DCM, not number of DCM timepoints
 all_ind = static_ind + dynamic_ind
@@ -47,16 +60,8 @@ all_names_strategy3 = [
     'Ads.z("CO2",23,10)',
     'Ads.z("CO2",28,10)',
 ]
-# define error variance
-error_variance = [1, 1, 1, 1, 1, 1, 1, 1, 1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
-# define error matrix
-error_mat = [[0] * len(all_names_strategy3) for _ in range(len(all_names_strategy3))]
 
-# set up variance in the diagonal elements
-for _ in range(len(all_names_strategy3)):
-    error_mat[_][_] = error_variance[_]
-
-# define static cost for static-cost measures
+# define static cost for static-cost measures in $ 
 static_cost = [
     1000,  # ads.gas_inlet.F (0)
     1000,  # ads.gas_outlet.F (1)
@@ -71,7 +76,8 @@ static_cost = [
     7000,  # des.gas_outlet.z("CO2")
 ]
 
-# define static cost (installaion) for dynamic-cost
+# define static cost (installaion) for dynamic-cost in $
+# ads.gas_outlet.z("CO2") # des.gas_outlet.z("CO2") # ads.z19 # ads.z23 # ads.z28
 static_cost.extend([100, 100, 500, 500, 500])
 # define dynamic cost
 # each static-cost measure has no per-sample cost
@@ -90,10 +96,26 @@ measure_info = MeasurementData(
     total_max_manual_num,  # maximum number of timepoints for all measurement
 )
 
+
+### STEP 2: Read and create Jacobian object
+# define error variance
+error_variance = [1, 1, 1, 1, 1, 1, 1, 1, 1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+# define error matrix
+error_mat = [[0] * len(all_names_strategy3) for _ in range(len(all_names_strategy3))]
+
+# set up variance in the diagonal elements
+for i in range(len(all_names_strategy3)):
+    error_mat[i][i] = error_variance[i]
+
 # create data object to pre-compute Qs
 # read jacobian from the source csv
 # Nt is the number of time points for each measurement
-jac_info = SensitivityData("./RotaryBed/Q3_scale.csv", Nt)
+# csv contains this dataframe (showing headers here): 
+#           MTC       HTC        DH      ISO1      ISO2
+#0    -0.539637 -0.002254 -0.049863  1.935160  0.551328
+#1    -0.494095  0.020672 -0.044344  2.097855  0.471068
+# ...
+jac_info = SensitivityData("./RotaryBed/Q110_scale.csv", Nt)
 static_measurement_index = [
     0,  # ads.gas_inlet.F (0)
     1,  # ads.gas_outlet.F (1)
@@ -119,6 +141,10 @@ jac_info.get_jac_list(
     dynamic_measurement_index,
 )  # the index of DCMs in the jacobian array
 
+
+
+### STEP 3: Create MeasurementOptimizer object, precomputation atom FIMs
+
 # use MeasurementOptimizer to pre-compute the unit FIMs
 calculator = MeasurementOptimizer(
     jac_info,  # SensitivityData object
@@ -131,8 +157,8 @@ calculator = MeasurementOptimizer(
 # calculate a list of unit FIMs
 calculator.assemble_unit_fims()
 
+### STEP 4: Create and solve MO optimization framework
 
-## MO optimization
 mip_option = True
 objective = ObjectiveLib.D
 fixed_nlp_opt = False
@@ -154,10 +180,17 @@ dynamic_time_dict = {}
 for i, tim in enumerate(num_dynamic_time):
     dynamic_time_dict[i] = tim
 
-# give range of budgets for this case
-budget_ranges = np.linspace(1000, 26000, 26)
-# give a trial ranges for a test; we use the first 3 budgets in budget_ranges
-trial_budget_ranges = budget_ranges[:3]
+
+# if run all results or just sensitivity test 
+rerun_all_paper_results = False 
+
+if rerun_all_paper_results:
+    # give range of budgets for this case
+    budget_ranges = np.linspace(1000, 26000, 26)
+else:
+    # give a trial ranges for a test; we use the first 3 budgets in budget_ranges
+    trial_budget_ranges = [1000, 5000, 10000]
+
 # initialize with A-opt. MILP solutions
 # choose what solutions to initialize from:
 # minlp_D: initialize with minlp_D solutions
@@ -230,19 +263,8 @@ print("model and solver wall clock time:", t3 - t1)
 print("solver wall clock time:", t3 - t2)
 calculator.extract_store_sol(start_budget, file_store_name)
 
-# loop over all budgets for a test
-for b in trial_budget_ranges[1:]:
-    print("====Solving with budget:", b, "====")
-    # open the update toggle every time so no need to create model every time
-    calculator.update_budget(b)
-    # solve the model
-    calculator.solve(mip_option=mip_option, objective=objective)
-    # extract and select solutions
-    calculator.extract_store_sol(b, file_store_name)
-
-
 # continue to run the rest of budgets if the test goes well
-for b in budget_ranges[3:]:
+for b in budget_ranges[1:]:
     print("====Solving with budget:", b, "====")
     # open the update toggle every time so no need to create model every time
     calculator.update_budget(b)

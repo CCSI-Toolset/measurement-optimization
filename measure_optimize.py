@@ -113,7 +113,8 @@ class SensitivityData:
         ------
         None
         """
-        jacobian_info = pd.read_csv(filename, index_col=False)
+        # first column is index column, indicated here. If you have different column as the index column, indicate here.
+        jacobian_info = pd.read_csv(filename, index_col=[0])
         # convert Jacobian matrix from Pandas DataFrame to numpy array
         jacobian_array = np.asarray(jacobian_info)
 
@@ -124,8 +125,7 @@ class SensitivityData:
             )
 
         # infer the number of parameters from the shape of jacobian
-        # the first column is the measurement name, so needs to be deleted
-        self.n_parameters = len(jacobian_array[0]) - 1
+        self.n_parameters = len(jacobian_array[0])
 
         # store the original Jacobian matrix in object
         self.jacobian = jacobian_array
@@ -205,8 +205,7 @@ class SensitivityData:
                     update_row_counter += 1
                     # loop over columns, i.e. parameters
                     for p in range(self.n_parameters):
-                        # it maps to column p+1 in the original Jacobian, because the first column is measurement name
-                        jac[update_row_counter][p] = self.jacobian[row_number][p + 1]
+                        jac[update_row_counter][p] = self.jacobian[row_number][p]
         # if there is dynamic-cost measurements
         if dynamic_measurement_idx is not None:
             # loop over DCM indices
@@ -219,8 +218,7 @@ class SensitivityData:
                     update_row_counter += 1
                     # loop over columns, i.e. parameters
                     for p in range(self.n_parameters):
-                        # it maps to column p+1 in the original Jacobian, because the first column is measurement name
-                        jac[update_row_counter][p] = self.jacobian[row_number][p + 1]
+                        jac[update_row_counter][p] = self.jacobian[row_number][p]
 
         self.jac = jac
 
