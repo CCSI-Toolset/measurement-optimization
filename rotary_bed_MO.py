@@ -115,7 +115,7 @@ for i in range(len(all_names_strategy3)):
 #0    -0.539637 -0.002254 -0.049863  1.935160  0.551328
 #1    -0.494095  0.020672 -0.044344  2.097855  0.471068
 # ...
-jac_info = SensitivityData("./RotaryBed/Q110_scale.csv", Nt)
+jac_info = SensitivityData("./rotary_source_data/Q110_scale.csv", Nt)
 static_measurement_index = [
     0,  # ads.gas_inlet.F (0)
     1,  # ads.gas_outlet.F (1)
@@ -180,6 +180,8 @@ dynamic_time_dict = {}
 for i, tim in enumerate(num_dynamic_time):
     dynamic_time_dict[i] = tim
 
+# choose linear solver here. Directly comment this line if default linear solver is used. 
+linear_solver_opt = "ma57"
 
 # if run all results or just sensitivity test 
 rerun_all_paper_results = False 
@@ -206,18 +208,18 @@ curr_results = np.linspace(1000, 26000, 26)
 # according to the initializer option, we provide different sets of initialization files
 if initializer_option == "milp_A":
     # initial solution file path and name
-    file_name_pre, file_name_end = "./rotary_results/Apr17_A_mip_", ""
+    file_name_pre, file_name_end = "./rotary_results/MILP_", "_a"
 
 elif initializer_option == "minlp_D":
     # initial solution file path and name
-    file_name_pre, file_name_end = "./rotary_results/Dec7_", "_d_mip"
+    file_name_pre, file_name_end = "./rotary_results/MINLP_", "_d"
 
 elif initializer_option == "lp_A":
     # initial solution file path and name
-    file_name_pre, file_name_end = "./rotary_results/May12_", "_a"
+    file_name_pre, file_name_end = "./rotary_results/LP_", "_a"
 
 elif initializer_option == "nlp_D":
-    file_name_pre, file_name_end = "./rotary_results/May10_", "_d"
+    file_name_pre, file_name_end = "./rotary_results/NLP_", "_d"
 
 
 # initialize the initial solution dict. key: budget. value: initial solution file name
@@ -256,7 +258,7 @@ calculator.optimizer(
 
 # timestamp for solving pyomo model
 t2 = time.time()
-calculator.solve(mip_option=mip_option, objective=objective)
+calculator.solve(mip_option=mip_option, objective=objective, linear_solver=linear_solver_opt)
 # timestamp for finishing
 t3 = time.time()
 print("model and solver wall clock time:", t3 - t1)
@@ -269,6 +271,6 @@ for b in budget_ranges[1:]:
     # open the update toggle every time so no need to create model every time
     calculator.update_budget(b)
     # solve the model
-    calculator.solve(mip_option=mip_option, objective=objective)
+    calculator.solve(mip_option=mip_option, objective=objective, linear_solver=linear_solver_opt)
     # extract and select solutions
     calculator.extract_store_sol(b, file_store_name)

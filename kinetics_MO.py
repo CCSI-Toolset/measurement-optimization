@@ -186,6 +186,9 @@ else:
     # give a trial ranges for a test; we use the first 3 budgets in budget_ranges
     budget_ranges = [1000, 2200, 3800]
 
+# choose linear solver here. Directly comment this line or give None if default linear solver is used. 
+linear_solver_opt = "ma57"
+
 # initialize with A-opt. MILP solutions
 # choose what solutions to initialize from:
 # minlp_D: initialize with minlp_D solutions
@@ -206,7 +209,7 @@ elif initializer_option == "minlp_D":
     # all budgets
     curr_results = np.linspace(1000, 5000, 11)
     # initial solution file path and name
-    file_name_pre, file_name_end = "./kinetics_results/MINLP_", "_d_mip"
+    file_name_pre, file_name_end = "./kinetics_results/MINLP_", "_d"
 
 elif initializer_option == "lp_A":
     # all budgets
@@ -253,7 +256,7 @@ calculator.optimizer(
 )  # print level for optimization part
 # timestamp for solving pyomo model
 t2 = time.time()
-calculator.solve(mip_option=mip_option, objective=objective, linear_solver="ma57")
+calculator.solve(mip_option=mip_option, objective=objective, linear_solver=linear_solver_opt)
 # timestamp for finishing
 t3 = time.time()
 print("model and solver wall clock time:", t3 - t1)
@@ -267,6 +270,6 @@ for b in budget_ranges[1:]:
     # open the update toggle every time so no need to create model every time
     calculator.update_budget(b)
     # solve the model
-    calculator.solve(mip_option=mip_option, objective=objective)
+    calculator.solve(mip_option=mip_option, objective=objective, linear_solver=linear_solver_opt)
     # extract and select solutions
     calculator.extract_store_sol(b, file_store_name)
