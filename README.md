@@ -91,22 +91,20 @@ Setup the scripts to reproduce result files and figures from the paper:
 
 - Step 1: run `kinetics_MO.py`
 - Step 2: with `mip_option` and `objective`, choose to run the A-optimality or D-optimality, mixed-integer or relaxed problem 
-- Step 3: with `budget_ranges`, set up the budget ranges as you want to try. The first three budgets will run as a test.
-  Suggested ranges: 
+- Step 3: with `rerun_all_paper_results`, set up the budget ranges as you want to try. The first three budgets will run as a test.
 
-  In our results, we use the budget range [1000, 5000] with a 100 discretization,
-  i.e. [1000, 1100, ..., 5000], for relaxed problems
-
-  we use the budget range [1000, 5000] with a 400 discretization,
+  If `rerun_all_paper_results`: we use the budget range [1000, 5000] with a 400 discretization,
   i.e. [1000, 1400, 1800, ..., 5000] for mixed-integer problems.
 
-  You can choose the same budget ranges, or only a few points of budgets, to run the script.
+  Otherwise, we use three budget [1000, 2200, 3800] to do a test run.
+  
+- Step 4: with `linear_solver_opt`, choose the linear solver for `CyIpopt`. If not specified, it will use the default linear solver, which is `ma27` if you have HSL, otherwise `mumps`. 
 
-- Step 4: with `initializer_option` and `curr_results`, select initial solutions to initialize the problem, and provide file paths for these solutions
+- Step 5: with `initializer_option` and `curr_results`, select initial solutions to initialize the problem, and provide file paths for these solutions
 
   You can choose from: A- and D-optimality, with mixed-integer or continuous options. In the paper, both objective functions and both mixed-integer and continuous frameworks are considered and solved. Refer to Eq. (11) in section 2.3 for the MO problem with mixed-integer and continuous options, Eq. (12), (13) in section 2.4 for A- and D-optimality. 
   
-- Step 5: store results for drawing figures
+- Step 6: store results for drawing figures
 
   To do this, define the param `file_store_name` with a string you given, for e.g., "MINLP_result_".
 
@@ -242,7 +240,7 @@ Data file type: `pickle`, storing a numpy array of the solutions of the shape Nm
 
 - D-optimality NLP results: `kinetics_results/NLP_x_d`, x in the range [1000, 1100, 1200, ..., 5000]
 
-- D-optimality MINLP results: `kinetics_results/MINLP_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
+- D-optimality MINLP results: `kinetics_results/MINLP_x_d`, x in the range [1000, 1400, 1800, ..., 5000]
 
 - Operating cost results: `kinetics_results/Operate_x_d_mip`, x in the range [1000, 1400, 1800, ..., 5000]
 
