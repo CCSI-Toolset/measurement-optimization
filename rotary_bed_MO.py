@@ -191,7 +191,7 @@ if rerun_all_paper_results:
     budget_ranges = np.linspace(1000, 26000, 26)
 else:
     # give a trial ranges for a test; we use the first 3 budgets in budget_ranges
-    budget_ranges = [1000, 5000, 10000]
+    budget_ranges = [1000, 5000, 15000]
 
 # initialize with A-opt. MILP solutions
 # choose what solutions to initialize from:
