@@ -33,13 +33,13 @@ The following instructions assume you have anaconda installed. We suggest create
 
 `conda install matplotlib`
    
-### Step 5: install `Pyomo` from specified branches
+### Step 4: install `Pyomo` from specified branches
 - install from the following branch for a generalization version of Mindtpy:
 
 `pip install git+https://github.com/ZedongPeng/pyomo.git@add_mindtpy_callback`
 
    
-### Step 6: install `GurobiPy`
+### Step 5: install `GurobiPy`
 - this is needed only for solving mixed-integer problems
 
   `conda install -c gurobi gurobi`
@@ -48,12 +48,12 @@ The following instructions assume you have anaconda installed. We suggest create
 
   `conda install -c gurobi gurobi==10.0.3`
    
-### Step 7: install `CyIpopt`
+### Step 6: install `CyIpopt`
 - this is needed only for D-optimality problems with grey-box modules
 
    `conda install -c conda-forge cyipopt`
 
-### Step 8: install `jupyter notebook`
+### Step 7: install `jupyter notebook`
 - this is needed only for the draw_figure.ipynb notebook
 
   `conda install jupyter notebook`
