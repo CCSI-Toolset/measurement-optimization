@@ -177,7 +177,7 @@ for i, tim in enumerate(num_dynamic_time[1:]):
     dynamic_time_dict[i] = np.round(tim, decimals=2)
 
 # if run all results or just sensitivity test 
-rerun_all_paper_results = False 
+rerun_all_paper_results = True
 
 if rerun_all_paper_results:
     # give range of budgets for this case
@@ -253,7 +253,7 @@ calculator.optimizer(
 )  # print level for optimization part
 # timestamp for solving pyomo model
 t2 = time.time()
-calculator.solve(mip_option=mip_option, objective=objective)
+calculator.solve(mip_option=mip_option, objective=objective, linear_solver="ma57")
 # timestamp for finishing
 t3 = time.time()
 print("model and solver wall clock time:", t3 - t1)

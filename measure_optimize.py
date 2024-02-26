@@ -1718,7 +1718,7 @@ class MeasurementOptimizer:
                 solver.config.options[k] = v
             # if set up linear solver
             if linear_solver is not None:
-                for k, v in linear_solver_setup:
+                for k, v in linear_solver_setup.items():
                     solver.config.options[k] = v 
             results = solver.solve(self.mod, tee=True)
 
