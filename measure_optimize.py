@@ -1030,6 +1030,8 @@ class MeasurementOptimizer:
         # this element needs to be stored in object for warmstart function use
         # because warmstart function won't work for pyomo model component
         self.fim_diagonal_small_element = fim_diagonal_small_element
+        # add mixed integer option 
+        self.mixed_integer = mixed_integer
 
         # print_level received here is for the optimization algorithm debugging
         self.optimize_print_level = print_level
@@ -1677,9 +1679,13 @@ class MeasurementOptimizer:
             results = solver.solve(self.mod, tee=True)
 
         elif not mip_option and objective == ObjectiveLib.A:
-            # solver = pyo.SolverFactory('ipopt')
-            # solver.options['linear_solver'] = "ma57"
-            # results = solver.solve(self.mod, tee=True)
+            ### Following for debubing. keep for possible use 
+            #solver = pyo.SolverFactory('ipopt')
+            # if linear_solver is not None:
+                # solver.options['linear_solver'] = linear_solver
+            #solver.options["max_iter"] = 0
+            #solver.options["bound_push"] = 1E-10
+            #results = solver.solve(self.mod, tee=True)
 
             solver = pyo.SolverFactory("gurobi", solver_io="python")
             solver.options["mipgap"] = 0.1
@@ -1695,6 +1701,7 @@ class MeasurementOptimizer:
             solver.config.options["hessian_approximation"] = "limited-memory"
             additional_options = {
                 "max_iter": 3000,
+                "bound_push": 1E-10,
                 "output_file": "console_output",
                 "linear_solver": "mumps",
             }
@@ -1786,7 +1793,6 @@ class MeasurementOptimizer:
         fix=False,
         upper_diagonal_only=False,
         num_dynamic_t_name=None,
-        budget=100,
         init_cov_y=None,
         initial_fim=None,
         dynamic_install_initial=None,
@@ -1886,10 +1892,14 @@ class MeasurementOptimizer:
             initial_solution  # dictionary that stores budget: solution file name
         )
         # ==== Initialize the model ====
+        if mixed_integer:
+            round_solution_opt = True 
+        else:
+            round_solution_opt = False
         # locate the binary solution file according to the new budget
         initial_file_name = self._locate_initial_file(budget_opt)
         # initialize the model with the binary decision variables
-        self._initialize_binary(initial_file_name)
+        self._initialize_binary(initial_file_name, round_solution=round_solution_opt)
 
         # store this for later use; or we need to input this again for update_budget
         self.obj = obj
@@ -1915,13 +1925,17 @@ class MeasurementOptimizer:
         # update the budget
         self.mod.budget = budget_opt
 
+        if self.mixed_integer:
+            round_solution_opt = True 
+        else:
+            round_solution_opt = False
         # update the initialization according to the new budget
         # locate the binary solution file according to the new budget
         initial_file_name = self._locate_initial_file(
             budget_opt,
         )  # new budget
         # initialize the model with the binary decision variables
-        self._initialize_binary(initial_file_name)
+        self._initialize_binary(initial_file_name, round_solution=round_solution_opt)
 
         # warmstart function initializes the model with all the binary decisions values stored in the model
         if self.obj == ObjectiveLib.A:
@@ -1996,20 +2010,22 @@ class MeasurementOptimizer:
         # query nearest neighbor. k=1 means the nearest. 
         _, nearest_idx = tree.query([budget], k=1)
 
-        if self.precompute_print_level >= 1:
-            print("using solution at", available_budget[nearest_idx], " too initialize")
-
         # assign solution file names, and FIM file names
         y_init_file = self.curr_res_list[available_budget[nearest_idx]]
 
+        if self.precompute_print_level >= 1:
+            print("using solution at", available_budget[nearest_idx], " to initialize, file name:", y_init_file)
+
         return y_init_file
 
-    def _initialize_binary(self, y_init_file):
+    def _initialize_binary(self, y_init_file, round_solution=False):
         """This function initializes all binary variables directly in the created model
 
         Arguments
         ---------
         y_init_file: the file name that contains a previous solution
+        round_solution: if True, we round the solution to integer solutions. 
+        This is for when we use relaxed solutions to initialize integer problems.
 
         Return
         ------
@@ -2018,14 +2034,18 @@ class MeasurementOptimizer:
         # read y
         with open(y_init_file, "rb") as f:
             init_cov_y = pickle.load(f)
+            f.close()
 
         # Round possible float solution to be integer
-        for i in range(self.num_measure_dynamic_flatten):
-            for j in range(self.num_measure_dynamic_flatten):
-                if init_cov_y[i][j] > self.near_1_threshold:
-                    init_cov_y[i][j] = int(1)
-                else:
-                    init_cov_y[i][j] = int(0)
+        if round_solution:
+            for i in range(self.num_measure_dynamic_flatten):
+                for j in range(self.num_measure_dynamic_flatten):
+                    if init_cov_y[i][j] > self.near_1_threshold:
+                        init_cov_y[i][j] = int(1)
+                        if self.precompute_print_level >=3: 
+                            print("Initialization choice:", i, j)
+                    else:
+                        init_cov_y[i][j] = int(0)
 
         # initialize m.cov_y with the intial solution
         # loop over number of measurements
@@ -2034,23 +2054,17 @@ class MeasurementOptimizer:
             for b in range(a, self.num_measure_dynamic_flatten):
                 self.mod.cov_y[a, b] = init_cov_y[a][b]
 
-        # initialize total manual number. This is not needed since it is initialized by warmstart function
-        # kept for now
-        # total_manual_init = 0
-
         # initialize the DCM installation flags
         # this needs initialized since it is binary decisions which warmstart function won't initialize
-        dynamic_install_init = [0, 0, 0]
+        dynamic_install_init = [0]*self.n_dynamic_measurements
 
         # round solutions
         # if floating solutions, if value > 0.01, we count it as an integer decision that is 1 or positive
         for i in range(self.n_static_measurements, self.num_measure_dynamic_flatten):
             if init_cov_y[i][i] > self.near_0_threshold:
-                # total_manual_init += 1  # kept this line for now
-
                 # identify which DCM this timepoint belongs to, turn the installation flag to be positive
                 i_pos = int((i - self.n_static_measurements) / self.sens_info.Nt)
-                dynamic_install_init[i_pos] = 1
+                dynamic_install_init[i_pos] = max(init_cov_y[i][i], dynamic_install_init[i_pos])
 
         # initialize m.if_install_dynamic with the value calculated
         # loop over DCM index
@@ -2058,6 +2072,10 @@ class MeasurementOptimizer:
             self.mod.if_install_dynamic[i] = dynamic_install_init[
                 i - self.n_static_measurements
             ]
+
+        if self.precompute_print_level >= 2:
+            print("if_install_dynamic is initialized to be:", dynamic_install_init)
+            print("Initialize with solution:", init_cov_y)
 
     def customized_warmstart(self, grey_box=True):
         """
@@ -2212,29 +2230,30 @@ class MeasurementOptimizer:
             )
 
         ### cost constraints
-        def cost_compute(m):
+        def cost_computation(m):
             """Compute cost
             cost = static-cost measurement cost + dynamic-cost measurement installation cost + dynamic-cost meausrement timepoint cost
             """
-            return sum(
-                m.cov_y[i, i].value * self.cost_list[i]
-                for i in range(self.num_measure_dynamic_flatten)
-            ) + sum(
+            static_and_dynamic_cost = sum(
+                m.cov_y[i, i].value * self.cost_list[i] for i in m.n_responses
+            )
+            dynamic_fixed_cost = sum(
                 m.if_install_dynamic[j].value
                 * self.dynamic_install_cost[j - self.n_static_measurements]
                 for j in m.dim_dynamic
             )
-
-        # compute cost
-        cost_init = cost_compute(self.mod)
+            return static_and_dynamic_cost + dynamic_fixed_cost
+        
         # copmute total number of dynamic time points selected
         total_dynamic_initial = total_dynamic_exp(self.mod)
         # compute total number of measurements selected
         total_initial = total_exp(self.mod)
-
         # initialize model variables
         self.mod.total_number_dynamic_measurements.value = total_dynamic_initial
         self.mod.total_number_measurements.value = total_initial
+
+        # compute cost
+        cost_init = cost_computation(self.mod)
         self.mod.cost.value = cost_init
 
         if self.optimize_print_level >= 1:
