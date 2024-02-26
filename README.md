@@ -33,13 +33,13 @@ The following instructions assume you have anaconda installed. We suggest create
 
 `conda install matplotlib`
    
-### Step 5: install `Pyomo` from specified branches
+### Step 4: install `Pyomo` from specified branches
 - install from the following branch for a generalization version of Mindtpy:
 
 `pip install git+https://github.com/ZedongPeng/pyomo.git@add_mindtpy_callback`
 
    
-### Step 6: install `GurobiPy`
+### Step 5: install `GurobiPy`
 - this is needed only for solving mixed-integer problems
 
   `conda install -c gurobi gurobi`
@@ -48,12 +48,12 @@ The following instructions assume you have anaconda installed. We suggest create
 
   `conda install -c gurobi gurobi==10.0.3`
    
-### Step 7: install `CyIpopt`
+### Step 6: install `CyIpopt`
 - this is needed only for D-optimality problems with grey-box modules
 
    `conda install -c conda-forge cyipopt`
 
-### Step 8: install `jupyter notebook`
+### Step 7: install `jupyter notebook`
 - this is needed only for the draw_figure.ipynb notebook
 
   `conda install jupyter notebook`
@@ -80,7 +80,7 @@ The following instructions assume you have anaconda installed. We suggest create
 
 - `rotary_bed_MO.py`: Rotary bed case study
 
-- `Draw_figure.ipynb`: Generates all results figures in the manuscript
+- `draw_figure.ipynb`: Generates all results figures in the manuscript
 
 
 ## Example to run code and reproduce figures for case studies
@@ -91,7 +91,7 @@ Setup the scripts to reproduce result files and figures from the paper:
 
 - Step 1: run `kinetics_MO.py`
 - Step 2: with `mip_option` and `objective`, choose to run the A-optimality or D-optimality, mixed-integer or relaxed problem 
-- Step 3: with `rerun_all_paper_results`, set up the budget ranges as you want to try. The first three budgets will run as a test.
+- Step 3: with `rerun_all_paper_results`, set up the budget ranges as you want to try. 
 
   If `rerun_all_paper_results`: we use the budget range [1000, 5000] with a 400 discretization,
   i.e. [1000, 1400, 1800, ..., 5000] for mixed-integer problems.
@@ -118,7 +118,7 @@ Setup the scripts to reproduce result files and figures from the paper:
 
   MINLP_result_5000, MINLP_result_fim_5000,
   
-- Step 6: use draw_figure.ipynb to read stored FIM and solutions
+- Step 7: use draw_figure.ipynb to read stored FIM and solutions
 
   - `read_fim` receives the string name, for.e.g. `MINLP_result_`, and budget ranges, returns a list of A- and D-optimality values of the given FIMs
  
@@ -135,19 +135,20 @@ Setup the scripts to reproduce result files and figures from the paper:
 
 - Step 1: run `rotary_bed_MO.py`
 - Step 2: with `mip_option` and `objective`, choose to run the A-optimality or D-optimality, mixed-integer or relaxed problem 
-- Step 3: with `budget_ranges`, set up the budget ranges as you want to try. The first three budgets will run as a test.
-  Suggested ranges: 
+- Step 3: with `rerun_all_paper_results`, set up the budget ranges as you want to try. 
 
-  In our results, we use the budget range [1000, 25000] with a 1000 discretization,
+  If `rerun_all_paper_results`: In our results, we use the budget range [1000, 25000] with a 1000 discretization,
   i.e. [1000, 11000, ..., 25000], for relaxed problems
 
-  You can choose the same budget ranges, or only a few points of budgets, to run the script.
+  Otherwise, we use three budget [1000, 5000, 10000] to do a test run.
 
-- Step 4: with `initializer_option` and `curr_results`, select initial solutions to initialize the problem, and provide file paths for these solutions
+- Step 4: with `linear_solver_opt`, choose the linear solver for `CyIpopt`. If not specified, it will use the default linear solver, which is `ma27` if you have HSL, otherwise `mumps`.
+  
+- Step 5: with `initializer_option` and `curr_results`, select initial solutions to initialize the problem, and provide file paths for these solutions
 
   You can choose from: A- and D-optimality, with mixed-integer or continuous options. 
   
-- Step 5: store results for drawing figures
+- Step 6: store results for drawing figures
 
   To do this, define the param `file_store_name` with a string you given, for e.g., "MINLP_result_".
 
@@ -161,7 +162,7 @@ Setup the scripts to reproduce result files and figures from the paper:
 
   MINLP_result_25000, MINLP_result_fim_25000,
   
-- Step 6: use draw_figure.ipynb to read stored FIM and solutions
+- Step 7: use draw_figure.ipynb to read stored FIM and solutions
 
   - `read_fim` receives the string name, for.e.g. `MINLP_result_`, and budget ranges, returns a list of A- and D-optimality values of the given FIMs
  
