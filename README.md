@@ -15,29 +15,48 @@ The following instructions assume you have anaconda installed. We suggest create
 
 `conda activate measurement_optimization`
    
-### Step 2: install `IDAES-PSE`
-- this step provides `Ipopt` solver, but this solver is not necessary for reproducing paper results
-- we did not test if the code can run without this step
+### Step 2 (optional): install `IDAES-PSE`
+- this step provides `Ipopt` solver, but this solver is not necessary for reproducing paper results if you already have `Ipopt`. If step 2 is conducted, step 3 can be skipped
 
 `pip install idaes-pse` 
 
 `idaes get-extensions`
+
+### Step 3: install `numpy`, `scipy`, `pandas`, `matplotlib` 
+- If not installing `IDAES-PSE`, the following packages are needed: 
+  
+`conda install numpy`
+
+`conda install scipy`
+
+`conda install pandas`
+
+`conda install matplotlib`
    
-### Step 3: install `Pyomo` from specified branches
+### Step 5: install `Pyomo` from specified branches
 - install from the following branch for a generalization version of Mindtpy:
 
 `pip install git+https://github.com/ZedongPeng/pyomo.git@add_mindtpy_callback`
 
    
-### Step 4: install `GurobiPy`
+### Step 6: install `GurobiPy`
 - this is needed only for solving mixed-integer problems
 
   `conda install -c gurobi gurobi`
+
+  (By Feb. 25 2024) ND CRC users: CRC hasn't updated their gurobi license to version 11. If you install gurobi without specifying version 10, it will pop an error about not having license for version 11. To specify a version for CRC:
+
+  `conda install -c gurobi gurobi==10.0.3`
    
-### Step 5: install `CyIpopt`
+### Step 7: install `CyIpopt`
 - this is needed only for D-optimality problems with grey-box modules
 
    `conda install -c conda-forge cyipopt`
+
+### Step 8: install `jupyter notebook`
+- this is needed only for the draw_figure.ipynb notebook
+
+  `conda install jupyter notebook`
 
 ### Software versions we use for the results 
 
