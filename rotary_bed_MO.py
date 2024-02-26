@@ -252,7 +252,7 @@ calculator.optimizer(
     num_dynamic_t_name=num_dynamic_time,  # number of time points of DCMs
     static_dynamic_pair=static_dynamic,  # if one measurement can be both SCM and DCM
     time_interval_all_dynamic=time_interval_for_all,  # time interval for time points of DCMs
-    FIM_diagonal_small_element=small_element,  # a small element added for FIM diagonals to avoid ill-conditioning
+    fim_diagonal_small_element=small_element,  # a small element added for FIM diagonals to avoid ill-conditioning
     print_level=1,
 )  # print level for optimization part
 

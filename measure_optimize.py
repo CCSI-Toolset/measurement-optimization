@@ -1974,8 +1974,6 @@ class MeasurementOptimizer:
 
         ans_y, _ = self.extract_solutions()
         print("pyomo calculated cost:", pyo.value(self.mod.cost))
-        print("if install dynamic measurements:")
-        print(pyo.value(self.mod.if_install_dynamic[3]))
 
         if store_name:
 
