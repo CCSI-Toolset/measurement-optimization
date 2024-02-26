@@ -140,7 +140,7 @@ Setup the scripts to reproduce result files and figures from the paper:
   If `rerun_all_paper_results`: In our results, we use the budget range [1000, 25000] with a 1000 discretization,
   i.e. [1000, 11000, ..., 25000], for relaxed problems
 
-  Otherwise, we use three budget [1000, 5000, 10000] to do a test run.
+  Otherwise, we use three budget [1000, 5000, 15000] to do a test run.
 
 - Step 4: with `linear_solver_opt`, choose the linear solver for `CyIpopt`. If not specified, it will use the default linear solver, which is `ma27` if you have HSL, otherwise `mumps`.
   
