@@ -80,7 +80,7 @@ The following instructions assume you have anaconda installed. We suggest create
 
 - `rotary_bed_MO.py`: Rotary bed case study
 
-- `Draw_figure.ipynb`: Generates all results figures in the manuscript
+- `draw_figure.ipynb`: Generates all results figures in the manuscript
 
 
 ## Example to run code and reproduce figures for case studies
