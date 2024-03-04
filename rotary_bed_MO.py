@@ -224,7 +224,7 @@ def rotary_experiment(mip_option,
         budget_ranges = np.linspace(1000, 26000, 26)
     else:
         # give a trial ranges for a test; we use the first 3 budgets in budget_ranges
-        budget_ranges = [1000, 5000, 15000]
+        budget_ranges = [5000, 15000]
 
 
     # budgets for the current results

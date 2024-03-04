@@ -219,7 +219,7 @@ def kinetics_experiment(mip_option,
         budget_ranges = np.linspace(1000, 5000, 11)
     else:
         # give a trial ranges for a test; we use the first 3 budgets in budget_ranges
-        budget_ranges = [1000, 2200, 3800]
+        budget_ranges = [2200, 3800, 4600]
 
     # ==== initialization strategy ====
     # according to the initializer option, we provide different sets of initialization files
