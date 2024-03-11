@@ -25,13 +25,7 @@ The following instructions assume you have anaconda installed. We suggest create
 ### Step 3: install `numpy`, `scipy`, `pandas`, `matplotlib` 
 - If not installing `IDAES-PSE`, the following packages are needed: 
   
-`conda install numpy`
-
-`conda install scipy`
-
-`conda install pandas`
-
-`conda install matplotlib`
+`conda install numpy scipy pandas matplotlib`
    
 ### Step 4: install `Pyomo` from specified branches
 - install from the following branch for a generalization version of Mindtpy:
