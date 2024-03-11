@@ -193,7 +193,7 @@ def rotary_experiment(mip_option,
     objective: objective function, chosen from ObjectiveLib.A or ObjectiveLib.D 
     small_element: scaler, the small element added to the diagonal of FIM
     file_store_name: string, save result names with this string 
-    initializer_option: string, choose what solutions to initialize from, lp_A, nlp_D, milp_A, minlp_D are options
+    initializer_option: string, choose what solutions to initialize from. 'lp_A', 'nlp_D', 'milp_A', 'minlp_D' are options
     rerun_all_paper_results: boolean, if run all results or just sensitivity test 
     linear_solver_opt: choose linear solver here. Directly comment this line or give None if default linear solver is used.
 
@@ -247,6 +247,8 @@ def rotary_experiment(mip_option,
     elif initializer_option == "nlp_D":
         file_name_pre, file_name_end = "./rotary_results/NLP_", "_d"
 
+    else:
+        print("Warning: initializer_option =",initializer_option," is not recognized. Please check the input.")
 
     # initialize the initial solution dict. key: budget. value: initial solution file name
     # this initialization dictionary provides a more organized input format for initialization
