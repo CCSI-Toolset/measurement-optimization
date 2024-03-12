@@ -2260,19 +2260,28 @@ class MeasurementOptimizer:
             print("warmstart initialize total dynamic: ", total_dynamic_initial)
             print("warmstart initialize cost:", cost_init)
 
-    def continuous_optimization_cvxpy(self, objective="D", budget=3000, 
+    def continuous_optimization_cvxpy(self, objective=ObjectiveLib.D, 
+                                      budget=3000, 
+                                      mixed_integer = False, 
                                       static_dynamic_pair = None,
                                       time_interval_all_dynamic = False, 
                                       num_dynamic_t_name = None,
                                       solver=None):
         """
         This optimization problem can also be formulated and solved in the CVXPY framework.
-        This is a generalization code for CVXPY problems for reference, not currently used for the paper.
+        This is a generalization code for CVXPY problems for Eq. 11 in MO paper.
 
         Arguments
         ---------
         :param objective: can choose from 'D', 'A', 'E' for now. if defined others or None, use A-optimality.
-        :param cost_budååget: give a total limit for costs.
+        :param budget: give a total limit for costs.
+        :param mixed_integer: if the problem is a mixed-integer problem, or relaxed
+        :param static_dynamic_pair: list of lists
+            a list of the name of measurements, that are selected as either dynamic or static measurements.
+        :param time_interval_all_dynamic: boolean
+            if True, the minimal time interval applies for all dynamical measurements
+        :param num_dynamic_t_name: list
+            a list of the exact time points for the dynamic-cost measurements time points
         :param solver: default to be MOSEK. Look for CVXPY document for more solver information.
 
         Returns
@@ -2308,15 +2317,21 @@ class MeasurementOptimizer:
             return -cp.lambda_min(fim)
 
         # construct variables
-        y_matrice = cp.Variable(
-            (self.num_measure_dynamic_flatten, self.num_measure_dynamic_flatten), nonneg=True
-        )
+        if not mixed_integer:
+            y_matrice = cp.Variable(
+                (self.num_measure_dynamic_flatten, self.num_measure_dynamic_flatten), nonneg=True
+            )
+        else:
+            y_matrice = cp.Variable(
+                (self.num_measure_dynamic_flatten, self.num_measure_dynamic_flatten), boolean=True
+            )
 
         if_install_y = cp.Variable(self.n_dynamic_measurements, nonneg = True)
 
         # cost limit
         p_cons = [
-            sum(y_matrice[i, i] * self.cost_list[i] for i in range(self.num_measure_dynamic_flatten))
+            sum(y_matrice[i, i] * self.cost_list[i] for i in range(self.num_measure_dynamic_flatten)) # static and dynamic timepoint cost
+            + sum(if_install_y[i]*self.dynamic_install_cost[i] for i in range(self.n_dynamic_measurements)) # dynamic installation costs
             <= budget
         ]
 
@@ -2445,7 +2460,7 @@ class MeasurementOptimizer:
             obj = cp.Maximize(e_opt(y_matrice))
         # A-optimality
         else:
-            if self.verbose:
+            if self.precompute_print_level >= 2:
                 print("Use A-optimality (Trace).")
             obj = cp.Maximize(a_opt(y_matrice))
 
@@ -2456,9 +2471,17 @@ class MeasurementOptimizer:
         else:
             problem.solve(solver=solver, verbose=True)
 
-        #self.solution_analysis(y_matrice, obj.value)
+        ans_y, sol_y = self.extract_solutions(y_matrice=y_matrice, if_install_y=if_install_y)
+        print_fim(eval_fim(y_matrice).value)
 
-    def extract_solutions(self):
+        if self.precompute_print_level >= 2: 
+            print("CVXPY calculated objective value:", obj.value)
+            #print("CVXPY calculated cost:", )
+
+        return ans_y, sol_y 
+        #return y_matrice, if_install_y, eval_fim(y_matrice), obj.value
+
+    def extract_solutions(self, y_matrice=None, if_install_y=None):
         """
         Extract and show solutions from a solved Pyomo model
         mod is an argument because we
@@ -2481,9 +2504,14 @@ class MeasurementOptimizer:
         for i in range(self.num_measure_dynamic_flatten):
             # loop over the measurement choice index
             for j in range(i, self.num_measure_dynamic_flatten):
-                cov = pyo.value(self.mod.cov_y[i, j])
+                if not y_matrice:
+                    cov = pyo.value(self.mod.cov_y[i, j])
+                else:
+                    cov = y_matrice[i,j].value    
                 # give value to its symmetric part
                 ans_y[i, j] = ans_y[j, i] = cov
+                
+
 
         # round small errors to integers
         # loop over all measurement choice
@@ -2514,7 +2542,7 @@ class MeasurementOptimizer:
             ]
         )
         # group DCM time points
-        sol_y = np.reshape(sol_y, (self.n_dynamic_measurements, self.dynamic_Nt))
+        sol_y = np.reshape(sol_y, (self.n_dynamic_measurements, self.sens_info.Nt))
         np.around(sol_y)
         # loop over each DCM
         for r in range(len(sol_y)):
