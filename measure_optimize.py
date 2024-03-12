@@ -16,6 +16,7 @@ from enum import Enum
 from dataclasses import dataclass
 import pickle
 from scipy.spatial import cKDTree
+import cvxpy as cp
 
 
 class CovarianceStructure(Enum):
@@ -933,18 +934,18 @@ class MeasurementOptimizer:
         measurement_matrix: a full measurement matrix, construct the weights for covariances
         """
         # check if measurement vector legal
-        if len(measurement_vector) != self.total_no_measure:
+        if len(measurement_vector) != self.num_measure_dynamic_flatten:
             raise ValueError(
                 "Measurement vector is of wrong shape, expecting length of"
-                + str(self.total_no_measure)
+                + str(self.num_measure_dynamic_flatten)
             )
 
         # initialize measurement matrix as a 2D array
-        measurement_matrix = np.zeros((self.total_no_measure, self.total_no_measure))
+        measurement_matrix = np.zeros((self.num_measure_dynamic_flatten, self.num_measure_dynamic_flatten))
 
         # loop over total measurement index
-        for i in range(self.total_no_measure):
-            for j in range(self.total_no_measure):
+        for i in range(self.num_measure_dynamic_flatten):
+            for j in range(self.num_measure_dynamic_flatten):
                 measurement_matrix[i, j] = min(
                     measurement_vector[i], measurement_vector[j]
                 )
@@ -1610,12 +1611,12 @@ class MeasurementOptimizer:
         fim = np.zeros((self.no_param, self.no_param))
 
         # go over all measurement index
-        for m1_rank in range(self.total_no_measure):
+        for m1_rank in range(self.num_measure_dynamic_flatten):
             # get the corresponding gradient vector for this measurement
             # use np.matrix to keep the dimensions for the vector, otherwise numpy makes the vector 1D instead of Np*1
             jac_m1 = np.matrix(self.jac[m1_rank])
             # go over all measurement index
-            for m2_rank in range(self.total_no_measure):
+            for m2_rank in range(self.num_measure_dynamic_flatten):
                 # get the corresponding gradient vector for this measurement
                 jac_m2 = np.matrix(self.jac[m2_rank])
                 # solution of if these two measurements are selected
@@ -2259,7 +2260,7 @@ class MeasurementOptimizer:
             print("warmstart initialize total dynamic: ", total_dynamic_initial)
             print("warmstart initialize cost:", cost_init)
 
-    def continuous_optimization_cvxpy(self, objective="D", budget=100, solver=None):
+    def continuous_optimization_cvxpy(self, objective="D", budget=3000, solver=None):
         """
         This optimization problem can also be formulated and solved in the CVXPY framework.
         This is a generalization code for CVXPY problems for reference, not currently used for the paper.
@@ -2275,18 +2276,15 @@ class MeasurementOptimizer:
         None
         """
 
-        # compute Atomic FIM
-        self.assemble_unit_fims()
-
-        # evaluate fim in the CVXPY framework
+        # evaluate fim in the CVXPY framework, Eq.(11a) in MO paper
         def eval_fim(y):
             """Evaluate FIM from y solution
             FIM = sum(cov_y[i,j]*unit FIM[i,j]) for all i, j in n_responses
             """
             fim = sum(
-                y[i, j] * self.unit_fims[i * self.total_no_measure + j]
-                for i in range(self.total_no_measure)
-                for j in range(self.total_no_measure)
+                y[i, j] * self.unit_fims[i * self.num_measure_dynamic_flatten + j]
+                for i in range(self.num_measure_dynamic_flatten)
+                for j in range(self.num_measure_dynamic_flatten)
             )
             return fim
 
@@ -2307,24 +2305,28 @@ class MeasurementOptimizer:
 
         # construct variables
         y_matrice = cp.Variable(
-            (self.total_no_measure, self.total_no_measure), nonneg=True
+            (self.num_measure_dynamic_flatten, self.num_measure_dynamic_flatten), nonneg=True
         )
 
         # cost limit
         p_cons = [
-            sum(y_matrice[i, i] * self.cost[i] for i in range(self.total_no_measure))
+            sum(y_matrice[i, i] * self.cost_list[i] for i in range(self.num_measure_dynamic_flatten))
             <= budget
         ]
 
         # loop over all measurement index
-        for k in range(self.total_no_measure):
+        for k in range(self.num_measure_dynamic_flatten):
             # loop over all measurement index
-            for l in range(self.total_no_measure):
+            for l in range(self.num_measure_dynamic_flatten):
                 # y[k,l] = y[k]*y[l] relaxation
                 p_cons += [y_matrice[k, l] <= y_matrice[k, k]]
                 p_cons += [y_matrice[k, l] <= y_matrice[l, l]]
                 p_cons += [y_matrice[k, k] + y_matrice[l, l] - 1 <= y_matrice[k, l]]
                 p_cons += [y_matrice.T == y_matrice]
+
+        #total number of manual dynamical measurements number
+        #Eq. 11f in paper 
+        sum(y_matrice[i,i] for i in range()) <= self.manual_number
 
         # D-optimality
         if objective == "D":
@@ -2345,7 +2347,7 @@ class MeasurementOptimizer:
         else:
             problem.solve(solver=solver, verbose=True)
 
-        self.__solution_analysis(y_matrice, obj.value)
+        self.solution_analysis(y_matrice, obj.value)
 
     def extract_solutions(self):
         """
