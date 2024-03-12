@@ -2262,6 +2262,8 @@ class MeasurementOptimizer:
 
     def continuous_optimization_cvxpy(self, objective="D", budget=3000, 
                                       static_dynamic_pair = None,
+                                      time_interval_all_dynamic = False, 
+                                      num_dynamic_t_name = None,
                                       solver=None):
         """
         This optimization problem can also be formulated and solved in the CVXPY framework.
@@ -2368,71 +2370,72 @@ class MeasurementOptimizer:
                 # if_install_y needs a padding of self.n_static_measurements
                 p_cons += [if_install_y[pair[1]-self.n_static_measurements] + y_matrice[pair[0], pair[0]] <= 1]
                     
-        '''
+        # pair time index and real time
+        # for e.g., time 2h is the index 16, dynamic[16] = 2
+        # this is for the time interval between two DCMs computation
+        dynamic_time = {}
+        # loop over time index
+        for i in range(self.sens_info.Nt):
+            # index: real time
+            dynamic_time[i] = num_dynamic_t_name[i]
+        #self.dynamic_time = dynamic_time
+
         # if there is minimal interval constraint
+        # Eq. 11h in the paper
         if self.min_time_interval is not None:
             # if this constraint applies to all dynamic measurements
             if time_interval_all_dynamic:
-                for t in range(self.dynamic_Nt):
+                for t in range(self.sens_info.Nt):
                     # end time is an open end of the region, so another constraint needs to be added to include end_time
                     # if dynamic_time[t]+discretize_time <= end_time+0.1*discretize_time:
-                    def discretizer(m):
-                        """Eq. 11h in paper
-                        """
-                        sumi = 0
-                        count = 0
-                        # get the timepoints in this interval
-                        while (count + t < self.dynamic_Nt) and (
-                            dynamic_time[count + t] - dynamic_time[t]
-                        ) < self.min_time_interval:
-                            for i in m.dim_dynamic:
-                                surro_idx = (
-                                    self.n_static_measurements
-                                    + (i - self.n_static_measurements)
-                                    * self.dynamic_Nt
-                                    + t
-                                    + count
-                                )
-                                sumi += m.cov_y[surro_idx, surro_idx]
-                            count += 1
+                    sumi = 0
+                    count = 0
+                    # get the timepoints in this interval
+                    while (count + t < self.sens_info.Nt) and (
+                        dynamic_time[count + t] - dynamic_time[t]
+                    ) < self.min_time_interval:
+                        for i in range(self.n_dynamic_measurements):
+                            surro_idx = (
+                                self.n_static_measurements
+                                + i
+                                * self.sens_info.Nt
+                                + t
+                                + count
+                            )
+                            sumi += y_matrice[surro_idx, surro_idx]
+                        count += 1
 
-                        return sumi <= 1
+                    p_cons += [sumi <= 1]
 
-                    con_name = "con_discreti_" + str(i) + str(t)
-                    m.add_component(con_name, pyo.Constraint(expr=discretizer))
             # if this constraint applies to each dynamic measurements, in a local way
             else:
-                for i in m.dim_dynamic:
-                    for t in range(self.dynamic_Nt):
+                for i in range(self.n_dynamic_measurements):
+                    for t in range(self.sens_info.Nt):
                         # end time is an open end of the region, so another constraint needs to be added to include end_time
                         # if dynamic_time[t]+discretize_time <= end_time+0.1*discretize_time:
 
-                        def discretizer(m):
-                            # sumi is the summation of all measurements selected during this time interval
-                            sumi = 0
-                            # count helps us go through each time points in this time interval
-                            count = 0
-                            # get timepoints in this interval
-                            while (count + t < self.dynamic_Nt) and (
-                                dynamic_time[count + t] - dynamic_time[t]
-                            ) < self.min_time_interval:
-                                # surro_idx gets the index of the current time point
-                                surro_idx = (
-                                    self.n_static_measurements
-                                    + (i - self.n_static_measurements)
-                                    * self.dynamic_Nt
-                                    + t
-                                    + count
-                                )
-                                # sum up all timepoints selections
-                                sumi += m.cov_y[surro_idx, surro_idx]
-                                count += 1
+                        # sumi is the summation of all measurements selected during this time interval
+                        sumi = 0
+                        # count helps us go through each time points in this time interval
+                        count = 0
+                        # get timepoints in this interval
+                        while (count + t < self.sens_info.Nt) and (
+                            dynamic_time[count + t] - dynamic_time[t]
+                        ) < self.min_time_interval:
+                            # surro_idx gets the index of the current time point
+                            surro_idx = (
+                                self.n_static_measurements
+                                + i
+                                * self.sens_info.Nt
+                                + t
+                                + count
+                            )
+                            # sum up all timepoints selections
+                            sumi += y_matrice[surro_idx, surro_idx]
+                            count += 1
 
-                            return sumi <= 1
-
-                        con_name = "con_discreti_" + str(i) + str(t)
-                        m.add_component(con_name, pyo.Constraint(expr=discretizer))
-        '''
+                        p_cons += [ sumi <= 1 ] 
+        
 
         # D-optimality
         if objective == "D":
