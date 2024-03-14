@@ -11,12 +11,15 @@ from measure_optimize import (
 import pickle
 import time
 
+# Important for loading HSL solvers
+import idaes
+
 run_tests = True
 run_paper_results = False
 
 # choose linear solver here. Directly comment out this line or give None if default linear solver is used. 
-# linear_solver_opt_value = "ma57"
-linear_solver_opt_value = None
+linear_solver_opt_value = "ma57"
+# linear_solver_opt_value = None
 
 '''
 ### STEP 4: Create and solve MO optimization framework
@@ -320,35 +323,35 @@ if run_tests:
 
     # Default values for all tests
     small_element_value = 0.0001
-    file_store_name_value = "test_run_"
+    file_store_name_value = "test"
 
     # if run all results or just sensitivity test 
     rerun_all_paper_results_value = False
 
     
-    print("\nTest 1: run a test with MILP, A-optimality, and LP_A initialization")
-    rotary_experiment(mip_option_value=True, 
-                    objective_value=ObjectiveLib.A, 
+    print("\nTest A: run a test with MILP, A-optimality, and LP_A initialization")
+    rotary_experiment(mip_option=True, 
+                    objective=ObjectiveLib.A, 
                     small_element=small_element_value, 
-                    file_store_name=file_store_name_value, 
+                    file_store_name=file_store_name_value + "_a_", 
                     initializer_option="lp_A",
                     rerun_all_paper_results=rerun_all_paper_results_value,
                     linear_solver_opt=linear_solver_opt_value)
 
-    print("\nTest 2: run a test with NLP, D-optimality, and LP_A initialization")
-    rotary_experiment(mip_option_value=False, 
-                    objective_value=ObjectiveLib.D, 
+    print("\nTest B: run a test with NLP, D-optimality, and LP_A initialization")
+    rotary_experiment(mip_option=False, 
+                    objective=ObjectiveLib.D, 
                     small_element=small_element_value, 
-                    file_store_name=file_store_name_value, 
+                    file_store_name=file_store_name_value + "_b_", 
                     initializer_option="lp_A",
                     rerun_all_paper_results=rerun_all_paper_results_value,
                     linear_solver_opt=linear_solver_opt_value)
     
-    print("\nTest 3: run a test with MINLP, D-optimality, and MILP_A initialization")
-    rotary_experiment(mip_option_value=True, 
-                    objective_value=ObjectiveLib.D, 
+    print("\nTest C: run a test with MINLP, D-optimality, and MILP_A initialization")
+    rotary_experiment(mip_option=True, 
+                    objective=ObjectiveLib.D, 
                     small_element=small_element_value, 
-                    file_store_name=file_store_name_value, 
+                    file_store_name=file_store_name_value + "_c_", 
                     initializer_option="milp_A",
                     rerun_all_paper_results=rerun_all_paper_results_value,
                     linear_solver_opt=linear_solver_opt_value)
@@ -357,34 +360,34 @@ if run_paper_results:
 
     # Default values for all tests
     small_element_value = 0.0001
-    file_store_name_value = "paper_run_alex_"
+    file_store_name_value = "paper_alex_run"
 
     # if run all results or just sensitivity test 
     rerun_all_paper_results_value = True
 
-    print("\nPaper Run 1: MILP, A-optimality, and LP_A initialization")
-    rotary_experiment(mip_option_value=True, 
-                    objective_value=ObjectiveLib.A, 
+    print("\nPaper Run A: MILP, A-optimality, and LP_A initialization")
+    rotary_experiment(mip_option=True, 
+                    objective=ObjectiveLib.A, 
                     small_element=small_element_value, 
-                    file_store_name=file_store_name_value, 
+                    file_store_name=file_store_name_value + "_a_", 
                     initializer_option="lp_A",
                     rerun_all_paper_results=rerun_all_paper_results_value,
                     linear_solver_opt=linear_solver_opt_value)
     
-    print("\nPaper Run 2: NLP, D-optimality, and MILP_A initialization")
-    rotary_experiment(mip_option_value=False,
-                    objective_value=ObjectiveLib.D, 
+    print("\nPaper Run B: NLP, D-optimality, and MILP_A initialization")
+    rotary_experiment(mip_option=False,
+                    objective=ObjectiveLib.D, 
                     small_element=small_element_value, 
-                    file_store_name=file_store_name_value, 
+                    file_store_name=file_store_name_value + "_b_", 
                     initializer_option="milp_A",
                     rerun_all_paper_results=rerun_all_paper_results_value,
                     linear_solver_opt=linear_solver_opt_value)
     
     print("\nPaper Run 3: MINLP, D-optimality, and MILP_A initialization")
-    rotary_experiment(mip_option_value=True, 
-                    objective_value=ObjectiveLib.D, 
+    rotary_experiment(mip_option=True, 
+                    objective=ObjectiveLib.D, 
                     small_element=small_element_value, 
-                    file_store_name=file_store_name_value, 
+                    file_store_name=file_store_name_value + "_c_", 
                     initializer_option="milp_A",
                     rerun_all_paper_results=rerun_all_paper_results_value,
                     linear_solver_opt=linear_solver_opt_value)

@@ -9,31 +9,37 @@ This repository contains code and results for paper: Measure this, not that: Opt
 The following instructions assume you have anaconda installed. We suggest create an environment with the following commands to run code: 
 
 ### Step 1: create a new environment 
-- create new environment, called for e.g. `measurement_optimization`, with `conda` with `Python` version 3.8
+- create new environment, called for e.g. `measurement_optimization`, with `conda` with `Python` version 3.10. (Note: Python version 3.8 was used for the results in the paper. However, the Gurobi package no long supports this Python version.)
 
-`conda create --name measurement_optimization python=3.8`
+`conda create --name measurement_optimization python=3.10`
 
 `conda activate measurement_optimization`
-   
-### Step 2 (optional): install `IDAES-PSE`
-- this step provides `Ipopt` solver, but this solver is not necessary for reproducing paper results if you already have `Ipopt`. If step 2 is conducted, step 3 can be skipped
+
+### Step 2: install `CyIpopt`
+- this is needed only for D-optimality problems with grey-box modules
+- important to install this second to avoid conflicts
+
+   `conda install -c conda-forge cyipopt`
+
+### Step 3 (optional): install `IDAES-PSE`
+- this step provides `Ipopt` solver, but this solver is not necessary for reproducing paper results if you already have `Ipopt`. If step 3 is conducted, step 4 can be skipped
 
 `pip install idaes-pse` 
 
 `idaes get-extensions`
 
-### Step 3: install `numpy`, `scipy`, `pandas`, `matplotlib` 
+### Step 4: install `numpy`, `scipy`, `pandas`, `matplotlib` 
 - If not installing `IDAES-PSE`, the following packages are needed: 
   
 `conda install numpy scipy pandas matplotlib`
    
-### Step 4: install `Pyomo` from specified branches
+### Step 5: install `Pyomo` from specified branches
 - install from the following branch for a generalization version of Mindtpy:
 
 `pip install git+https://github.com/ZedongPeng/pyomo.git@add_mindtpy_callback`
 
    
-### Step 5: install `GurobiPy`
+### Step 6: install `GurobiPy`
 - this is needed only for solving mixed-integer problems
 
   `conda install -c gurobi gurobi`
@@ -42,17 +48,13 @@ The following instructions assume you have anaconda installed. We suggest create
 
   `conda install -c gurobi gurobi==10.0.3`
    
-### Step 6: install `CyIpopt`
-- this is needed only for D-optimality problems with grey-box modules
-
-   `conda install -c conda-forge cyipopt`
 
 ### Step 7: install `jupyter notebook`
 - this is needed only for the draw_figure.ipynb notebook
 
   `conda install jupyter notebook`
 
-### Software versions we use for the results 
+### Software versions we use for the paper results 
 
 `Python`: 3.8
 
