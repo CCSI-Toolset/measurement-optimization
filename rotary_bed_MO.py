@@ -11,152 +11,14 @@ from measure_optimize import (
 import pickle
 import time
 
+run_tests = True
+run_paper_results = False
 
-### STEP 1: set up measurement cost strategy 
+# choose linear solver here. Directly comment out this line or give None if default linear solver is used. 
+# linear_solver_opt_value = "ma57"
+linear_solver_opt_value = None
 
-# number of time points for DCM
-Nt = 110
-# maximum manual measurement number for each measurement
-max_manual_num = 5
-# minimal measurement interval
-min_interval_num = 10.0
-# maximum manual measurement number for all measurements
-total_max_manual_num = 20
-# index of columns of SCM and DCM in Q
-static_ind = [
-    0,  # ads.gas_inlet.F (0)
-    1,  # ads.gas_outlet.F (1)
-    2,  # ads.gas_outlet.T (2)
-    3,  # des.gas_inlet.F (4)
-    4,  # des.gas_outlet.F (5)
-    5,  # des.gas_outlet.T (6)
-    6,  # ads.T19 (8)
-    7,  # ads.T23 (9)
-    8,  # ads.T28 (10)
-    9,  # ads.gas_outlet.z("CO2")
-    10,  # des.gas_outlet.z("CO2")
-]
-# ads.gas_outlet.z("CO2") # des.gas_outlet.z("CO2") # ads.z19 # ads.z23 # ads.z28
-dynamic_ind = [11, 12, 13, 14, 15]
-# this index is the number of SCM + nubmer of DCM, not number of DCM timepoints
-all_ind = static_ind + dynamic_ind
-num_total_measure = len(all_ind)
-# meausrement names
-all_names_strategy3 = [
-    "Ads.gas_inlet.F",
-    "Ads.gas_outlet.F",
-    "Ads.gas_outlet.T",
-    "Des.gas_inlet.F",
-    "Des.gas_outlet.F",
-    "Des.gas_outlet.T",
-    "Ads.T_g.Value(19,10)",
-    "Ads.T_g.Value(23,10)",
-    "Ads.T_g.Value(28,10)",  # all static
-    'Ads.gas_outlet.z("CO2").static',
-    'Des.gas_outlet.z("CO2").static',  # static z
-    'Ads.gas_outlet.z("CO2").dynamic',
-    'Des.gas_outlet.z("CO2").dynamic',  # dynamic z
-    'Ads.z("CO2",19,10)',
-    'Ads.z("CO2",23,10)',
-    'Ads.z("CO2",28,10)',
-]
-
-# define static cost for static-cost measures in $ 
-static_cost = [
-    1000,  # ads.gas_inlet.F (0)
-    1000,  # ads.gas_outlet.F (1)
-    500,  # ads.gas_outlet.T (2)
-    1000,  # des.gas_inlet.F (4)
-    1000,  # des.gas_outlet.F (5)
-    500,  # des.gas_outlet.T (6)
-    1000,  # ads.T19 (8)
-    1000,  # ads.T23 (9)
-    1000,  # ads.T28 (10)
-    7000,  # ads.gas_outlet.z("CO2")
-    7000,  # des.gas_outlet.z("CO2")
-]
-
-# define static cost (installaion) for dynamic-cost in $
-# ads.gas_outlet.z("CO2") # des.gas_outlet.z("CO2") # ads.z19 # ads.z23 # ads.z28
-static_cost.extend([100, 100, 500, 500, 500])
-# define dynamic cost
-# each static-cost measure has no per-sample cost
-dynamic_cost = [0] * len(static_ind)  # SCM has no installaion costs
-# each dynamic-cost measure costs $ 100 per sample
-dynamic_cost.extend([100] * len(dynamic_ind))  # 100 is the cost of each time point
-
-## define MeasurementData object
-measure_info = MeasurementData(
-    all_names_strategy3,  # name string
-    all_ind,  # jac_index: measurement index in Q
-    static_cost,  # static costs
-    dynamic_cost,  # dynamic costs
-    min_interval_num,  # minimal time interval between two timepoints
-    max_manual_num,  # maximum number of timepoints for each measurement
-    total_max_manual_num,  # maximum number of timepoints for all measurement
-)
-
-
-### STEP 2: Read and create Jacobian object
-# define error variance
-error_variance = [1, 1, 1, 1, 1, 1, 1, 1, 1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
-# define error matrix
-error_mat = [[0] * len(all_names_strategy3) for _ in range(len(all_names_strategy3))]
-
-# set up variance in the diagonal elements
-for i in range(len(all_names_strategy3)):
-    error_mat[i][i] = error_variance[i]
-
-# create data object to pre-compute Qs
-# read jacobian from the source csv
-# Nt is the number of time points for each measurement
-# csv contains this dataframe (showing headers here): 
-#           MTC       HTC        DH      ISO1      ISO2
-#0    -0.539637 -0.002254 -0.049863  1.935160  0.551328
-#1    -0.494095  0.020672 -0.044344  2.097855  0.471068
-# ...
-jac_info = SensitivityData("./rotary_source_data/Q110_scale.csv", Nt)
-static_measurement_index = [
-    0,  # ads.gas_inlet.F (0)
-    1,  # ads.gas_outlet.F (1)
-    2,  # ads.gas_outlet.T (2)
-    4,  # des.gas_inlet.F (4)
-    5,  # des.gas_outlet.F (5)
-    6,  # des.gas_outlet.T (6)
-    8,  # ads.T19 (8)
-    9,  # ads.T23 (9)
-    10,  # ads.T28 (10)
-    3,  # ads.gas_outlet.z("CO2")
-    7,  # des.gas_outlet.z("CO2")
-]  # the index of CA, CB, CC in the jacobian array, considered as SCM
-dynamic_measurement_index = [
-    3,  # ads.gas_outlet.z("CO2")
-    7,  # des.gas_outlet.z("CO2")
-    11,  # ads.z("CO2",19,10)
-    12,  # ads.z("CO2",23,10)
-    13,  # ads.z("CO2",28,10)
-]  # the index of CA, CB, CC in the jacobian array, also considered as DCM
-jac_info.get_jac_list(
-    static_measurement_index,  # the index of SCMs in the jacobian array
-    dynamic_measurement_index,
-)  # the index of DCMs in the jacobian array
-
-
-
-### STEP 3: Create MeasurementOptimizer object, precomputation atom FIMs
-
-# use MeasurementOptimizer to pre-compute the unit FIMs
-calculator = MeasurementOptimizer(
-    jac_info,  # SensitivityData object
-    measure_info,  # MeasurementData object
-    error_cov=error_mat,  # error covariance matrix
-    error_opt=CovarianceStructure.measure_correlation,  # error covariance options
-    print_level=3,  # I use highest here to see all information
-)
-
-# calculate a list of unit FIMs
-calculator.assemble_unit_fims()
-
+'''
 ### STEP 4: Create and solve MO optimization framework
 
 ## The most often used options are listed as arguments here 
@@ -164,6 +26,7 @@ mip_option_value = True # mixed integer problem or not
 objective_value = ObjectiveLib.D # objective, ObjectiveLib.A or ObjectiveLib.D 
 small_element_value = 0.0001  # the small element added to the diagonal of FIM
 file_store_name_value = "test_run_" # save result names with this string 
+
 # initialize with A-opt. MILP solutions
 # choose what solutions to initialize from:
 # minlp_D: initialize with minlp_D solutions
@@ -171,11 +34,14 @@ file_store_name_value = "test_run_" # save result names with this string
 # lp_A: iniitalize with lp_A solution
 # nlp_D: initialize with nlp_D solution
 initializer_option_value = "lp_A"
+
 # if run all results or just sensitivity test 
 rerun_all_paper_results_value = False
-# choose linear solver here. Directly comment this line or give None if default linear solver is used. 
-linear_solver_opt_value = "ma57"
 
+# choose linear solver here. Directly comment out this line or give None if default linear solver is used. 
+# linear_solver_opt_value = "ma57"
+linear_solver_opt_value = None
+'''
 
 def rotary_experiment(mip_option, 
                         objective, 
@@ -202,12 +68,159 @@ def rotary_experiment(mip_option,
     None. 
     """
 
+    ### STEP 0: set up options for the MO problem
+
     fixed_nlp_opt = False
     mix_obj_option = False
     alpha_opt = 0.9
 
     sparse_opt = True
     fix_opt = False
+
+    ### STEP 1: set up measurement cost strategy 
+
+    # number of time points for DCM
+    Nt = 110
+    # maximum manual measurement number for each measurement
+    max_manual_num = 5
+    # minimal measurement interval
+    min_interval_num = 10.0
+    # maximum manual measurement number for all measurements
+    total_max_manual_num = 20
+    # index of columns of SCM and DCM in Q
+    static_ind = [
+        0,  # ads.gas_inlet.F (0)
+        1,  # ads.gas_outlet.F (1)
+        2,  # ads.gas_outlet.T (2)
+        3,  # des.gas_inlet.F (4)
+        4,  # des.gas_outlet.F (5)
+        5,  # des.gas_outlet.T (6)
+        6,  # ads.T19 (8)
+        7,  # ads.T23 (9)
+        8,  # ads.T28 (10)
+        9,  # ads.gas_outlet.z("CO2")
+        10,  # des.gas_outlet.z("CO2")
+    ]
+    # ads.gas_outlet.z("CO2") # des.gas_outlet.z("CO2") # ads.z19 # ads.z23 # ads.z28
+    dynamic_ind = [11, 12, 13, 14, 15]
+    # this index is the number of SCM + nubmer of DCM, not number of DCM timepoints
+    all_ind = static_ind + dynamic_ind
+    num_total_measure = len(all_ind)
+    # meausrement names
+    all_names_strategy3 = [
+        "Ads.gas_inlet.F",
+        "Ads.gas_outlet.F",
+        "Ads.gas_outlet.T",
+        "Des.gas_inlet.F",
+        "Des.gas_outlet.F",
+        "Des.gas_outlet.T",
+        "Ads.T_g.Value(19,10)",
+        "Ads.T_g.Value(23,10)",
+        "Ads.T_g.Value(28,10)",  # all static
+        'Ads.gas_outlet.z("CO2").static',
+        'Des.gas_outlet.z("CO2").static',  # static z
+        'Ads.gas_outlet.z("CO2").dynamic',
+        'Des.gas_outlet.z("CO2").dynamic',  # dynamic z
+        'Ads.z("CO2",19,10)',
+        'Ads.z("CO2",23,10)',
+        'Ads.z("CO2",28,10)',
+    ]
+
+    # define static cost for static-cost measures in $ 
+    static_cost = [
+        1000,  # ads.gas_inlet.F (0)
+        1000,  # ads.gas_outlet.F (1)
+        500,  # ads.gas_outlet.T (2)
+        1000,  # des.gas_inlet.F (4)
+        1000,  # des.gas_outlet.F (5)
+        500,  # des.gas_outlet.T (6)
+        1000,  # ads.T19 (8)
+        1000,  # ads.T23 (9)
+        1000,  # ads.T28 (10)
+        7000,  # ads.gas_outlet.z("CO2")
+        7000,  # des.gas_outlet.z("CO2")
+    ]
+
+    # define static cost (installaion) for dynamic-cost in $
+    # ads.gas_outlet.z("CO2") # des.gas_outlet.z("CO2") # ads.z19 # ads.z23 # ads.z28
+    static_cost.extend([100, 100, 500, 500, 500])
+    # define dynamic cost
+    # each static-cost measure has no per-sample cost
+    dynamic_cost = [0] * len(static_ind)  # SCM has no installaion costs
+    # each dynamic-cost measure costs $ 100 per sample
+    dynamic_cost.extend([100] * len(dynamic_ind))  # 100 is the cost of each time point
+
+    ## define MeasurementData object
+    measure_info = MeasurementData(
+        all_names_strategy3,  # name string
+        all_ind,  # jac_index: measurement index in Q
+        static_cost,  # static costs
+        dynamic_cost,  # dynamic costs
+        min_interval_num,  # minimal time interval between two timepoints
+        max_manual_num,  # maximum number of timepoints for each measurement
+        total_max_manual_num,  # maximum number of timepoints for all measurement
+    )
+
+
+    ### STEP 2: Read and create Jacobian object
+    # define error variance
+    error_variance = [1, 1, 1, 1, 1, 1, 1, 1, 1, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+    # define error matrix
+    error_mat = [[0] * len(all_names_strategy3) for _ in range(len(all_names_strategy3))]
+
+    # set up variance in the diagonal elements
+    for i in range(len(all_names_strategy3)):
+        error_mat[i][i] = error_variance[i]
+
+    # create data object to pre-compute Qs
+    # read jacobian from the source csv
+    # Nt is the number of time points for each measurement
+    # csv contains this dataframe (showing headers here): 
+    #           MTC       HTC        DH      ISO1      ISO2
+    #0    -0.539637 -0.002254 -0.049863  1.935160  0.551328
+    #1    -0.494095  0.020672 -0.044344  2.097855  0.471068
+    # ...
+    jac_info = SensitivityData("./rotary_source_data/Q110_scale.csv", Nt)
+    static_measurement_index = [
+        0,  # ads.gas_inlet.F (0)
+        1,  # ads.gas_outlet.F (1)
+        2,  # ads.gas_outlet.T (2)
+        4,  # des.gas_inlet.F (4)
+        5,  # des.gas_outlet.F (5)
+        6,  # des.gas_outlet.T (6)
+        8,  # ads.T19 (8)
+        9,  # ads.T23 (9)
+        10,  # ads.T28 (10)
+        3,  # ads.gas_outlet.z("CO2")
+        7,  # des.gas_outlet.z("CO2")
+    ]  # the index of CA, CB, CC in the jacobian array, considered as SCM
+    dynamic_measurement_index = [
+        3,  # ads.gas_outlet.z("CO2")
+        7,  # des.gas_outlet.z("CO2")
+        11,  # ads.z("CO2",19,10)
+        12,  # ads.z("CO2",23,10)
+        13,  # ads.z("CO2",28,10)
+    ]  # the index of CA, CB, CC in the jacobian array, also considered as DCM
+    jac_info.get_jac_list(
+        static_measurement_index,  # the index of SCMs in the jacobian array
+        dynamic_measurement_index,
+    )  # the index of DCMs in the jacobian array
+
+
+
+    ### STEP 3: Create MeasurementOptimizer object, precomputation atom FIMs
+
+    # use MeasurementOptimizer to pre-compute the unit FIMs
+    calculator = MeasurementOptimizer(
+        jac_info,  # SensitivityData object
+        measure_info,  # MeasurementData object
+        error_cov=error_mat,  # error covariance matrix
+        error_opt=CovarianceStructure.measure_correlation,  # error covariance options
+        print_level=3,  # I use highest here to see all information
+    )
+
+    # calculate a list of unit FIMs
+    calculator.assemble_unit_fims()
 
     num_dynamic_time = np.linspace(2, 220, Nt)
 
@@ -303,10 +316,75 @@ def rotary_experiment(mip_option,
         # extract and select solutions
         calculator.extract_store_sol(b, file_store_name)
 
-rotary_experiment(mip_option_value, 
-                    objective_value, 
+if run_tests:
+
+    # Default values for all tests
+    small_element_value = 0.0001
+    file_store_name_value = "test_run_"
+
+    # if run all results or just sensitivity test 
+    rerun_all_paper_results_value = False
+
+    
+    print("\nTest 1: run a test with MILP, A-optimality, and LP_A initialization")
+    rotary_experiment(mip_option_value=True, 
+                    objective_value=ObjectiveLib.A, 
                     small_element=small_element_value, 
                     file_store_name=file_store_name_value, 
-                    initializer_option=initializer_option_value,
+                    initializer_option="lp_A",
+                    rerun_all_paper_results=rerun_all_paper_results_value,
+                    linear_solver_opt=linear_solver_opt_value)
+
+    print("\nTest 2: run a test with NLP, D-optimality, and LP_A initialization")
+    rotary_experiment(mip_option_value=False, 
+                    objective_value=ObjectiveLib.D, 
+                    small_element=small_element_value, 
+                    file_store_name=file_store_name_value, 
+                    initializer_option="lp_A",
+                    rerun_all_paper_results=rerun_all_paper_results_value,
+                    linear_solver_opt=linear_solver_opt_value)
+    
+    print("\nTest 3: run a test with MINLP, D-optimality, and MILP_A initialization")
+    rotary_experiment(mip_option_value=True, 
+                    objective_value=ObjectiveLib.D, 
+                    small_element=small_element_value, 
+                    file_store_name=file_store_name_value, 
+                    initializer_option="milp_A",
+                    rerun_all_paper_results=rerun_all_paper_results_value,
+                    linear_solver_opt=linear_solver_opt_value)
+
+if run_paper_results:
+
+    # Default values for all tests
+    small_element_value = 0.0001
+    file_store_name_value = "paper_run_alex_"
+
+    # if run all results or just sensitivity test 
+    rerun_all_paper_results_value = True
+
+    print("\nPaper Run 1: MILP, A-optimality, and LP_A initialization")
+    rotary_experiment(mip_option_value=True, 
+                    objective_value=ObjectiveLib.A, 
+                    small_element=small_element_value, 
+                    file_store_name=file_store_name_value, 
+                    initializer_option="lp_A",
+                    rerun_all_paper_results=rerun_all_paper_results_value,
+                    linear_solver_opt=linear_solver_opt_value)
+    
+    print("\nPaper Run 2: NLP, D-optimality, and MILP_A initialization")
+    rotary_experiment(mip_option_value=False,
+                    objective_value=ObjectiveLib.D, 
+                    small_element=small_element_value, 
+                    file_store_name=file_store_name_value, 
+                    initializer_option="milp_A",
+                    rerun_all_paper_results=rerun_all_paper_results_value,
+                    linear_solver_opt=linear_solver_opt_value)
+    
+    print("\nPaper Run 3: MINLP, D-optimality, and MILP_A initialization")
+    rotary_experiment(mip_option_value=True, 
+                    objective_value=ObjectiveLib.D, 
+                    small_element=small_element_value, 
+                    file_store_name=file_store_name_value, 
+                    initializer_option="milp_A",
                     rerun_all_paper_results=rerun_all_paper_results_value,
                     linear_solver_opt=linear_solver_opt_value)
