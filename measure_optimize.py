@@ -55,6 +55,7 @@ class ObjectiveLib(Enum):
 
     A = 0
     D = 1
+    E = 2
 
     @classmethod
     def has_value(cls, value):
@@ -1986,6 +1987,35 @@ class MeasurementOptimizer:
             pickle.dump(fim_result, file2)
             file2.close()
 
+    def extract_store_sol_cvxpy(self, budget_opt, y_matrice, obj, fim, if_install_y, store_name):
+        """
+        Extract the solution from pyomo model, store in two pickles.
+        First data file (store_name+"_fim_"+budget_opt): pickle, a Nm*Nm numpy array that is the solution of measurements
+        Second data file (store_name+"_fim_"+budget_opt): pickle, a Np*Np numpy array that is the FIM
+
+        Arguments
+        ---------
+        :param store_name: if not None, store the solution and FIM in pickle file with the given name
+        """
+
+        # extract solution 
+        ans_y, sol_y = self.extract_solutions(y_matrice=y_matrice, if_install_y=if_install_y)
+        
+        # extract FIM 
+        if self.precompute_print_level >= 2:
+            print_fim(fim)
+            print("CVXPY calculated objective value:", obj.value)
+
+        if store_name:
+
+            file = open(store_name + str(budget_opt), "wb")
+            pickle.dump(ans_y, file)
+            file.close()
+
+            file2 = open(store_name + "fim_" + str(budget_opt), "wb")
+            pickle.dump(fim, file2)
+            file2.close()
+
     def _locate_initial_file(self, budget):
         """
         Given the budget, select which initial solution it should use by locating the closest budget that has stored solutions
@@ -2266,7 +2296,9 @@ class MeasurementOptimizer:
                                       static_dynamic_pair = None,
                                       time_interval_all_dynamic = False, 
                                       num_dynamic_t_name = None,
-                                      solver=None):
+                                      surrogate_obj = True, 
+                                      solver=None, 
+                                      store_name = None):
         """
         This optimization problem can also be formulated and solved in the CVXPY framework.
         This is a generalization code for CVXPY problems for Eq. 11 in MO paper.
@@ -2327,6 +2359,8 @@ class MeasurementOptimizer:
             )
 
         if_install_y = cp.Variable(self.n_dynamic_measurements, nonneg = True)
+
+        surro_obj = cp.Variable(nonneg = True)
 
         # cost limit
         p_cons = [
@@ -2453,10 +2487,14 @@ class MeasurementOptimizer:
         
 
         # D-optimality
-        if objective == "D":
-            obj = cp.Maximize(d_opt(y_matrice))
+        if objective == ObjectiveLib.D:
+            if surrogate_obj:
+                p_cons += [surro_obj <= d_opt(y_matrice)]
+                obj = cp.Maximize(surro_obj)
+            else:
+                obj = cp.Maximize(d_opt(y_matrice))
         # E-optimality
-        elif objective == "E":
+        elif objective == ObjectiveLib.E:
             obj = cp.Maximize(e_opt(y_matrice))
         # A-optimality
         else:
@@ -2471,15 +2509,9 @@ class MeasurementOptimizer:
         else:
             problem.solve(solver=solver, verbose=True)
 
-        ans_y, sol_y = self.extract_solutions(y_matrice=y_matrice, if_install_y=if_install_y)
-        print_fim(eval_fim(y_matrice).value)
+        self.extract_store_sol_cvxpy(budget,y_matrice, obj, eval_fim(y_matrice).value, if_install_y, store_name)
 
-        if self.precompute_print_level >= 2: 
-            print("CVXPY calculated objective value:", obj.value)
-            #print("CVXPY calculated cost:", )
-
-        return ans_y, sol_y 
-        #return y_matrice, if_install_y, eval_fim(y_matrice), obj.value
+        
 
     def extract_solutions(self, y_matrice=None, if_install_y=None):
         """
