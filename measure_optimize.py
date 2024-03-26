@@ -1652,7 +1652,7 @@ class MeasurementOptimizer:
             linear_solver_setup = {"linear_solver": linear_solver}
 
             # Added for Alex's desktop (temporary solution)
-            linear_solver_setup["hsllib"] = "/Users/adowling/CoinHSL/lib/libcoinhsl.dylib"
+            # linear_solver_setup["hsllib"] = "/Users/adowling/CoinHSL/lib/libcoinhsl.dylib"
 
         if self.fixed_nlp:
             solver = pyo.SolverFactory("cyipopt")

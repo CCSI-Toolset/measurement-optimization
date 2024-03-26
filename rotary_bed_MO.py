@@ -328,7 +328,7 @@ if run_tests:
     # if run all results or just sensitivity test 
     rerun_all_paper_results_value = False
 
-    '''
+    
     print("\nTest A: run a test with MILP, A-optimality, and LP_A initialization")
     rotary_experiment(mip_option=True, 
                     objective=ObjectiveLib.A, 
@@ -337,7 +337,7 @@ if run_tests:
                     initializer_option="lp_A",
                     rerun_all_paper_results=rerun_all_paper_results_value,
                     linear_solver_opt=linear_solver_opt_value)
-    '''
+    
 
     print("\nTest B: run a test with NLP, D-optimality, and LP_A initialization")
     rotary_experiment(mip_option=False, 
