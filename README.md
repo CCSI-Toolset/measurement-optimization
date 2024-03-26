@@ -54,6 +54,10 @@ The following instructions assume you have anaconda installed. We suggest create
 
   `conda install jupyter notebook`
 
+### One shot install
+
+`conda create --name measurement_optimization -c conda-forge -c IDAES-PSE -c gurobi python=3.10 cyipopt numpy scipy pandas matplotlib idaes-pse gurobi==10.0.3`
+
 ### Software versions we use for the paper results 
 
 `Python`: 3.8
@@ -70,7 +74,7 @@ The following instructions assume you have anaconda installed. We suggest create
 
 Solving D-optimality requires access to the HSL library. Recommended workflow:
 - Request license from HSL (https://licences.stfc.ac.uk/product/coin-hsl)
-- Download compiled binaries/libraries from HSL (https://licences.stfc.ac.uk/product/libhsl)
+- Download compiled binaries/libraries from HSL
 - Unzip and put someone safe
 - Use the `hsllib` option to tell Ipopt where to find `libhsl.dylib`
 - Use `xattr -dr com.apple.quarantine /path/to/libs/*` to allow loading (https://disable-gatekeeper.github.io/)
