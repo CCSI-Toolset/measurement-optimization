@@ -66,6 +66,15 @@ The following instructions assume you have anaconda installed. We suggest create
 
 `CyIpopt`: 1.3.0
 
+### macOS users
+
+Solving D-optimality requires access to the HSL library. Recommended workflow:
+- Request license from HSL (https://licences.stfc.ac.uk/product/coin-hsl)
+- Download compiled binaries/libraries from HSL (https://licences.stfc.ac.uk/product/libhsl)
+- Unzip and put someone safe
+- Use the `hsllib` option to tell Ipopt where to find `libhsl.dylib`
+- Use `xattr -dr com.apple.quarantine /path/to/libs/*` to allow loading (https://disable-gatekeeper.github.io/)
+
 ## Code 
 
 - `measure_optimize.py`: Measurement optimization optimization framework

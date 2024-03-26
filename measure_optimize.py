@@ -1651,6 +1651,9 @@ class MeasurementOptimizer:
         if linear_solver is not None:
             linear_solver_setup = {"linear_solver": linear_solver}
 
+            # Added for Alex's desktop (temporary solution)
+            linear_solver_setup["hsllib"] = "/Users/adowling/CoinHSL/lib/libcoinhsl.dylib"
+
         if self.fixed_nlp:
             solver = pyo.SolverFactory("cyipopt")
             solver.config.options["hessian_approximation"] = "limited-memory"
