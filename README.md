@@ -54,9 +54,13 @@ The following instructions assume you have anaconda installed. We suggest create
 
   `conda install jupyter notebook`
 
-### One shot install
+### Streamlined installation on CRC (Notre Dame)
 
 `conda create --name measurement_optimization -c conda-forge -c IDAES-PSE -c gurobi python=3.10 cyipopt numpy scipy pandas matplotlib idaes-pse gurobi==10.0.3`
+
+`pip install git+https://github.com/ZedongPeng/pyomo.git@add_mindtpy_callback`
+
+`pyomo build-extensions` or `idaes get-extensions`
 
 ### Software versions we use for the paper results 
 

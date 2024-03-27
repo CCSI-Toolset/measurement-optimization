@@ -9,5 +9,6 @@ conda activate measurement_optimization
 
 #module load python
 module load gurobi/10.0.2
+module load ipopt/hsl/
 
 python3 rotary_bed_MO.py
