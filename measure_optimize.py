@@ -1989,12 +1989,17 @@ class MeasurementOptimizer:
 
     def extract_store_sol_cvxpy(self, budget_opt, y_matrice, obj, fim, if_install_y, store_name):
         """
-        Extract the solution from pyomo model, store in two pickles.
-        First data file (store_name+"_fim_"+budget_opt): pickle, a Nm*Nm numpy array that is the solution of measurements
-        Second data file (store_name+"_fim_"+budget_opt): pickle, a Np*Np numpy array that is the FIM
+        Extract the solution, FIM, objective function from Cvxpy model, and store in two pickle files
+        "store_name + budget_opt": pickle file storing the y solution 
+        "store_name + fim + budget_opt": pickle file storing the FIM 
 
         Arguments
         ---------
+        :param budget_opt: budget of the problem 
+        :param y_matrice: the Cvxpy y matrice solution 
+        :param obj: the Cvxpy calculated objective function 
+        :param fim: the FIM calculated by Cvxpy 
+        :param if_install_y: DCM installaion binary variable solution 
         :param store_name: if not None, store the solution and FIM in pickle file with the given name
         """
 
@@ -2007,7 +2012,6 @@ class MeasurementOptimizer:
             print("CVXPY calculated objective value:", obj.value)
 
         if store_name:
-
             file = open(store_name + str(budget_opt), "wb")
             pickle.dump(ans_y, file)
             file.close()
@@ -2314,7 +2318,12 @@ class MeasurementOptimizer:
             if True, the minimal time interval applies for all dynamical measurements
         :param num_dynamic_t_name: list
             a list of the exact time points for the dynamic-cost measurements time points
+        :param surrogate_obj: boolean 
+            if True, using a surrogate variable to be the objective, the objective function < surrogate variable 
+            if False, directly use the objective function to be the objective 
         :param solver: default to be MOSEK. Look for CVXPY document for more solver information.
+        :param store_name: string
+            name used to store the solution and objective function 
 
         Returns
         -------
@@ -2344,22 +2353,26 @@ class MeasurementOptimizer:
             return cp.log_det(fim)
 
         def e_opt(y):
-            """E-optimality as OBJ"""
+            """E-optimality as OBJ
+            This OBJ is not used for now (pending test)
+            """
             fim = eval_fim(y)
             return -cp.lambda_min(fim)
 
         # construct variables
-        if not mixed_integer:
+        if not mixed_integer: # continuous variables
             y_matrice = cp.Variable(
                 (self.num_measure_dynamic_flatten, self.num_measure_dynamic_flatten), nonneg=True
             )
-        else:
+        else: # discrete binary variables
             y_matrice = cp.Variable(
                 (self.num_measure_dynamic_flatten, self.num_measure_dynamic_flatten), boolean=True
             )
 
+        # boolean for if a DCM is installed 
         if_install_y = cp.Variable(self.n_dynamic_measurements, nonneg = True)
 
+        # surrogate objective
         surro_obj = cp.Variable(nonneg = True)
 
         # cost limit
@@ -2373,10 +2386,11 @@ class MeasurementOptimizer:
         for k in range(self.num_measure_dynamic_flatten):
             # loop over all measurement index
             for l in range(self.num_measure_dynamic_flatten):
-                # y[k,l] = y[k]*y[l] relaxation
+                # y[k,l] = y[k]*y[l] McCormick relaxation
                 p_cons += [y_matrice[k, l] <= y_matrice[k, k]]
                 p_cons += [y_matrice[k, l] <= y_matrice[l, l]]
                 p_cons += [y_matrice[k, k] + y_matrice[l, l] - 1 <= y_matrice[k, l]]
+                # symmetric matrix
                 p_cons += [y_matrice.T == y_matrice]
 
         #total number of manual dynamical measurements number
@@ -2409,6 +2423,7 @@ class MeasurementOptimizer:
             for j in range(start, end):
                 p_cons += [if_install_y[i] >= y_matrice[j,j]]
                 
+            # constrains for if installing DCM
             p_cons += [if_install_y[i] <= sum(y_matrice[k,k] for k in range(start, end))]
             p_cons += [if_install_y[i] <= 1 ]
                 
