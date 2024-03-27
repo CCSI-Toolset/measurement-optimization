@@ -58,6 +58,12 @@ The following instructions assume you have anaconda installed. We suggest create
 
   `conda install jupyter notebook`
 
+
+### Step 8 (Optional for `Cvxpy`): install `cvxpy`
+- this is needed only for constructing the problem with `cvxpy`
+
+  `conda install -c conda-forge cvxpy`
+
 ### Software versions we use for the results 
 
 `Python`: 3.8
@@ -69,6 +75,8 @@ The following instructions assume you have anaconda installed. We suggest create
 `GurobiPy`: 10.0.3
 
 `CyIpopt`: 1.3.0
+
+`Cvxpy`: 1.2.1
 
 ## Code 
 
@@ -82,6 +90,7 @@ The following instructions assume you have anaconda installed. We suggest create
 
 - `draw_figure.ipynb`: Generates all results figures in the manuscript
 
+- `cvxpy_problem.py`: Kinetics case study implemented with `Cvxpy`
 
 ## Example to run code and reproduce figures for case studies
 
