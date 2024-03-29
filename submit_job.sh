@@ -1,7 +1,7 @@
 #!/bin/bash
 #$ -q long           	    # Specify queue
 #$ -pe smp 24               # Specify number of cores to use.
-#$ -N rotary_bed_tests1     # Specify job name
+#$ -N rotary_bed_paper1     # Specify job name
 #$ -M adowling@nd.edu	    # Specify email
 #$ -m bae		            # Send email beginning, abort, end
 

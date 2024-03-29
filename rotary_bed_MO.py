@@ -14,8 +14,8 @@ import time
 # Important for loading HSL solvers
 import idaes
 
-run_tests = True
-#run_paper_results = True
+run_tests = False
+run_paper_results = True
 
 # choose linear solver here. Directly comment out this line or give None if default linear solver is used. 
 linear_solver_opt_value = "ma57"
