@@ -12,6 +12,7 @@ from measure_optimize import (
 import pickle
 import time
 import matplotlib.pyplot as plt
+import unittest
 #from idaes.core.util.model_diagnostics import DiagnosticsToolbox
 
 
@@ -144,7 +145,7 @@ class TestCvxpy(unittest.TestCase):
         # optimization options
         objective = ObjectiveLib.A
 
-        budget_opt = 5000
+        budget_opt = 3000
 
         mixed_integer_opt = True
 
@@ -161,7 +162,7 @@ class TestCvxpy(unittest.TestCase):
         for i, tim in enumerate(num_dynamic_time[1:]):
             dynamic_time_dict[i] = np.round(tim, decimals=2)
             
-        calculator.continuous_optimization_cvxpy(objective=objective, 
+        obj = calculator.continuous_optimization_cvxpy(objective=objective, 
                                                     mixed_integer = mixed_integer_opt,
                                                 budget=budget_opt, 
                                                static_dynamic_pair = static_dynamic, 
@@ -169,6 +170,40 @@ class TestCvxpy(unittest.TestCase):
                                                 num_dynamic_t_name=num_dynamic_time,  # number of time points of DCMs      
                                          solver="MOSEK", 
                                          store_name = file_store_name)
+        
+        self.assertAlmostEqual(obj.value, 108.3066, places=1)
+
+        
+        # optimization options
+        objective = ObjectiveLib.D
+
+        budget_opt = 3000
+
+        mixed_integer_opt = False
+
+        file_store_name = "./cvxpy_results/cvxpy_A_"
+        #file_store_name = None
+
+        num_dynamic_time = np.linspace(0, 60, 9)
+
+        static_dynamic = [[0, 3], [1, 4], [2, 5]]  # These pairs cannot be chosen simultaneously
+        time_interval_for_all = True
+
+        # map the timepoint index to its real time
+        dynamic_time_dict = {}
+        for i, tim in enumerate(num_dynamic_time[1:]):
+            dynamic_time_dict[i] = np.round(tim, decimals=2)
+            
+        obj = calculator.continuous_optimization_cvxpy(objective=objective, 
+                                                    mixed_integer = mixed_integer_opt,
+                                                budget=budget_opt, 
+                                               static_dynamic_pair = static_dynamic, 
+                                               time_interval_all_dynamic = time_interval_for_all, 
+                                                num_dynamic_t_name=num_dynamic_time,  # number of time points of DCMs      
+                                         solver="MOSEK", 
+                                         store_name = file_store_name)
+        
+        self.assertAlmostEqual(obj.value, 1.591, places=1)
         
         
 
