@@ -311,12 +311,12 @@ class TestExample(unittest.TestCase):
         initializer_option_value = "lp_A"
         # if run all results or just sensitivity test 
         rerun_all_paper_results_value = False
+        linear_solver_opt_value = "ma57"
 
         
         sol_set, obj_set = kinetics_experiment(mip_option_value, 
                             objective_value, 
                             small_element=small_element_value, 
-                            file_store_name=file_store_name_value, 
                             initializer_option=initializer_option_value,
                             rerun_all_paper_results=rerun_all_paper_results_value,
                             linear_solver_opt=linear_solver_opt_value)
@@ -348,7 +348,6 @@ class TestExample(unittest.TestCase):
         sol_set, obj_set = kinetics_experiment(mip_option_value, 
                             objective_value, 
                             small_element=small_element_value, 
-                            file_store_name=file_store_name_value, 
                             initializer_option=initializer_option_value,
                             rerun_all_paper_results=rerun_all_paper_results_value,
                             linear_solver_opt=linear_solver_opt_value)
@@ -381,7 +380,6 @@ class TestExample(unittest.TestCase):
         sol_set, obj_set = kinetics_experiment(mip_option_value, 
                             objective_value, 
                             small_element=small_element_value, 
-                            file_store_name=file_store_name_value, 
                             initializer_option=initializer_option_value,
                             rerun_all_paper_results=rerun_all_paper_results_value,
                             linear_solver_opt=linear_solver_opt_value)
@@ -413,7 +411,6 @@ class TestExample(unittest.TestCase):
         sol_set, obj_set = kinetics_experiment(mip_option_value, 
                             objective_value, 
                             small_element=small_element_value, 
-                            file_store_name=file_store_name_value, 
                             initializer_option=initializer_option_value,
                             rerun_all_paper_results=rerun_all_paper_results_value,
                             linear_solver_opt=linear_solver_opt_value)
