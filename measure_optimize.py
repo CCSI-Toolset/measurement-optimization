@@ -483,7 +483,7 @@ class MeasurementOptimizer:
 
         elif error_option == CovarianceStructure.time_correlation:
             # check the first dimension (length of DCMs)
-            if len(error_cov) != self.n_total_measurements:
+            if len(error_cov) != self.sens_info.total_measure_idx:
                 raise ValueError(
                     "error_cov must have the same length as n_total_measurements. Expect length:"
                     + str(self.n_total_measurements)
@@ -491,15 +491,15 @@ class MeasurementOptimizer:
 
             # check the time correlation matrice shape for each DCM
             # loop over the index of DCM to retrieve the number of time points for DCM
-            for i in range(self.n_total_measurements):
+            for i in range(self.sens_info.total_measure_idx):
                 # check row number
-                if len(error_cov[0]) != self.sens_info.Nt:
+                if len(error_cov[i]) != self.sens_info.Nt:
                     raise ValueError(
                         "error_cov[i] must have the shape Nt*Nt. Expect number of rows:"
                         + str(self.sens_info.Nt)
                     )
                 # check column number
-                if len(error_cov[0][0]) != self.sens_info.Nt:
+                if len(error_cov[i][i]) != self.sens_info.Nt:
                     raise ValueError(
                         "error_cov[i] must have the shape Nt*Nt. Expect number of columns:"
                         + str(self.sens_info.Nt)
@@ -697,7 +697,7 @@ class MeasurementOptimizer:
         # different time correlation matrix for each measurement
         # no covariance between measurements
         elif error_option == CovarianceStructure.time_correlation:
-            for i in range(self.n_total_measurements):
+            for i in range(self.sens_info.total_measure_idx):
                 # give the error covariance to Sigma
                 # each measurement has a different time-correlation structure
                 # that is why this is a 3D matrix
@@ -707,9 +707,7 @@ class MeasurementOptimizer:
                 for t1 in range(self.sens_info.Nt):
                     for t2 in range(self.sens_info.Nt):
                         # for the ith measurement, the error matrix is error_cov[i]
-                        Sigma[sigma_i_start + t1, sigma_i_start + t2] = error_cov[i][
-                            t1
-                        ][t2]
+                        Sigma[sigma_i_start + t1, sigma_i_start + t2] = error_cov[i][t1][t2]
 
             if self.precompute_print_level >= 2:
                 print("Error covariance matrix option:", error_option)
@@ -1984,6 +1982,9 @@ class MeasurementOptimizer:
             file2 = open(store_name + "_fim_" + str(budget_opt), "wb")
             pickle.dump(fim_result, file2)
             file2.close()
+
+        # return the answer y, and the FIM
+        return ans_y, fim_result
 
     def _locate_initial_file(self, budget):
         """
