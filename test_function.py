@@ -13,11 +13,10 @@ import time
 import unittest
 
 class TestSensitivity(unittest.TestCase):
-    
+    """Test sensitivity object by checking the shape and values of Jacobian matrix generated
+    """
     def test_sens_data(self): 
-        
         ### Read and create Jacobian object
-
 
         # create data object to pre-compute Qs
         # read jacobian from the source csv
@@ -60,10 +59,10 @@ class TestSensitivity(unittest.TestCase):
 
 
 class TestMeasurementError(unittest.TestCase):
-    
+    """Test the measurement object by checking if the code throws
+    error as expected when given a wrong type of input
+    """
     def test_measurement_error(self):
-        ### STEP 1: set up measurement cost strategy 
-
         # number of time points for DCM
         Nt = 8
 
@@ -102,7 +101,7 @@ class TestMeasurementError(unittest.TestCase):
         # each dynamic-cost measure costs $ 400 per sample
         dynamic_cost.extend([400] * len(dynamic_ind))
 
-        ## define MeasurementData object
+        ## define MeasurementData object with wrong jac_index number
         with self.assertRaises(ValueError):
             measure_info = MeasurementData(
                 all_names_strategy3,  # name string
@@ -114,7 +113,7 @@ class TestMeasurementError(unittest.TestCase):
                 total_max_manual_num,  # maximum number of timepoints for all measurement
             )
             
-        ## define MeasurementData object
+        ## define MeasurementData object with wrong type of static costs
         with self.assertRaises(ValueError):
             measure_info = MeasurementData(
                 all_names_strategy3,  # name string
@@ -126,7 +125,7 @@ class TestMeasurementError(unittest.TestCase):
                 total_max_manual_num,  # maximum number of timepoints for all measurement
             )
             
-        ## define MeasurementData object
+        ## define MeasurementData object with wrong type of dynamic costs
         with self.assertRaises(ValueError):
             measure_info = MeasurementData(
                 all_names_strategy3,  # name string
@@ -138,7 +137,7 @@ class TestMeasurementError(unittest.TestCase):
                 total_max_manual_num,  # maximum number of timepoints for all measurement
             )
             
-        ## define MeasurementData object
+        ## define MeasurementData object with wrong type of minimal time interval
         with self.assertRaises(ValueError):
             measure_info = MeasurementData(
                 all_names_strategy3,  # name string
@@ -150,7 +149,7 @@ class TestMeasurementError(unittest.TestCase):
                 total_max_manual_num,  # maximum number of timepoints for all measurement
             )
         
-        ## define MeasurementData object
+        ## define MeasurementData object with wrong type of max # of timepoints
         with self.assertRaises(ValueError):
             measure_info = MeasurementData(
                 all_names_strategy3,  # name string
@@ -162,7 +161,7 @@ class TestMeasurementError(unittest.TestCase):
                 total_max_manual_num,  # maximum number of timepoints for all measurement
             )
         
-        ## define MeasurementData object
+        ## define MeasurementData object with wrong type of max # of total timepoints
         with self.assertRaises(ValueError):
             measure_info = MeasurementData(
                 all_names_strategy3,  # name string
@@ -176,7 +175,8 @@ class TestMeasurementError(unittest.TestCase):
         
 
 class TestCovariance(unittest.TestCase):
-    
+    """Test if all five types of covariances generate the error covariance matrix correctly 
+    """
     def test_covariance(self):
 
         ### STEP 1: set up measurement cost strategy 

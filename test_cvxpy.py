@@ -17,7 +17,9 @@ import unittest
 
 
 class TestCvxpy(unittest.TestCase):
-    
+    """
+    Test CVXPY A-optimality MILP problem, and D-optimality NLP problem
+    """
     def test_cv(self):
         # set up problem formulation
 
@@ -142,13 +144,15 @@ class TestCvxpy(unittest.TestCase):
         # calculate a list of unit FIMs
         calculator.assemble_unit_fims()
         
+        
+        ### Test A-optimality MILP problem
         # optimization options
         objective = ObjectiveLib.A
 
         budget_opt = 3000
 
         mixed_integer_opt = True
-
+        
         file_store_name = "./cvxpy_results/cvxpy_A_"
         #file_store_name = None
 
@@ -170,10 +174,11 @@ class TestCvxpy(unittest.TestCase):
                                                 num_dynamic_t_name=num_dynamic_time,  # number of time points of DCMs      
                                          solver="MOSEK", 
                                          store_name = file_store_name)
-        
+        # test objective function value
         self.assertAlmostEqual(obj.value, 108.3066, places=1)
 
         
+        ### Test D-optimality NLP problem
         # optimization options
         objective = ObjectiveLib.D
 
@@ -181,7 +186,7 @@ class TestCvxpy(unittest.TestCase):
 
         mixed_integer_opt = False
 
-        file_store_name = "./cvxpy_results/cvxpy_A_"
+        file_store_name = "./cvxpy_results/cvxpy_D_"
         #file_store_name = None
 
         num_dynamic_time = np.linspace(0, 60, 9)
@@ -203,6 +208,7 @@ class TestCvxpy(unittest.TestCase):
                                          solver="MOSEK", 
                                          store_name = file_store_name)
         
+        # test objective function value
         self.assertAlmostEqual(obj.value, 1.591, places=1)
         
         

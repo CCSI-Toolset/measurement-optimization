@@ -15,7 +15,8 @@ import unittest
 
 
 class TestExample(unittest.TestCase):
-    
+    """Test kinetics example, A-optimality LP and MILP, D-optimality NLP and MINLP
+    """
     def test_eg(self):
         ### STEP 1: set up measurement cost strategy 
 
@@ -313,7 +314,7 @@ class TestExample(unittest.TestCase):
         rerun_all_paper_results_value = False
         linear_solver_opt_value = "ma57"
 
-        
+        # create object
         sol_set, obj_set = kinetics_experiment(mip_option_value, 
                             objective_value, 
                             small_element=small_element_value, 
@@ -321,7 +322,7 @@ class TestExample(unittest.TestCase):
                             rerun_all_paper_results=rerun_all_paper_results_value,
                             linear_solver_opt=linear_solver_opt_value)
         
-        
+        # test objective functions in A- and D- for both budgets
         self.assertAlmostEqual(np.trace(obj_set[0]), 153.05, places=1)
         self.assertAlmostEqual(np.linalg.det(obj_set[0]), 0.383, places=1)
         self.assertAlmostEqual(np.trace(obj_set[1]), 168.659, places=1)
@@ -344,7 +345,7 @@ class TestExample(unittest.TestCase):
         # if run all results or just sensitivity test 
         rerun_all_paper_results_value = False
 
-        
+        # create example object
         sol_set, obj_set = kinetics_experiment(mip_option_value, 
                             objective_value, 
                             small_element=small_element_value, 
@@ -352,7 +353,7 @@ class TestExample(unittest.TestCase):
                             rerun_all_paper_results=rerun_all_paper_results_value,
                             linear_solver_opt=linear_solver_opt_value)
         
-        
+        # test objective functions in A- and D- for both budgets
         self.assertAlmostEqual(np.trace(obj_set[0]), 118.92, places=1)
         self.assertAlmostEqual(np.linalg.det(obj_set[0]), 0.1275, places=1)
         self.assertAlmostEqual(np.trace(obj_set[1]), 168.459, places=1)
@@ -384,7 +385,7 @@ class TestExample(unittest.TestCase):
                             rerun_all_paper_results=rerun_all_paper_results_value,
                             linear_solver_opt=linear_solver_opt_value)
         
-        
+        # test objective functions in A- and D- for both budgets
         self.assertAlmostEqual(np.trace(obj_set[0]), 117.62, places=1)
         self.assertAlmostEqual(np.linalg.det(obj_set[0]), 12.11, places=1)
         self.assertAlmostEqual(np.trace(obj_set[1]), 139.544, places=1)
@@ -415,7 +416,7 @@ class TestExample(unittest.TestCase):
                             rerun_all_paper_results=rerun_all_paper_results_value,
                             linear_solver_opt=linear_solver_opt_value)
         
-        
+        # test objective functions in A- and D- for both budgets
         self.assertAlmostEqual(np.trace(obj_set[0]), 110.1356, places=1)
         self.assertAlmostEqual(np.linalg.det(obj_set[0]), 6.049, places=1)
         self.assertAlmostEqual(np.trace(obj_set[1]), 124.0202, places=1)
