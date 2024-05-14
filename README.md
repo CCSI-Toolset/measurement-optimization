@@ -10,8 +10,9 @@ The following instructions assume you have anaconda installed. We suggest create
 
 ### Step 1: create a new environment 
 - create new environment, called for e.g. `measurement_optimization`, with `conda` with `Python` version 3.8
+Update on May 14: Python 3.8 is not necessary (sometimes even causing problem.) Let's switch to the most updated Python. This is tested to have no problems. 
 
-`conda create --name measurement_optimization python=3.8`
+`conda create --name measurement_optimization`
 
 `conda activate measurement_optimization`
    
