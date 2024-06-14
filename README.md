@@ -4,6 +4,8 @@ Authors: Jialu Wang, Zedong Peng, Ryan Hughes, Debangsu Bhattacharyya, David E. 
 
 This repository contains code and results for the paper: *Measure This, Not That: Optimizing the Cost and Model-based Information Content of Measurements* 
 
+Questions: Please contact Prof. Alex Dowling (adowling@nd.edu). This repository is primarily to archive the code. It may not be maintained. The version of software packages used to generate results are given in the paper.
+
 ## Installation instructions 
 
 The following instructions assume you have anaconda installed. We suggest creating an environment with the following commands to run code: 
