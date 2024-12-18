@@ -61,6 +61,9 @@ Update on May 14: Python 3.8 is not necessary (sometimes even causing problem.) 
 
   `conda install jupyter notebook`
 
+### (Optional) Build `PyNumero`
+
+If you get errors related to the ASL library, AmplInterface, etc., you may need to [rebuild PyNumero](https://pyomo.readthedocs.io/en/latest/explanation/solvers/pynumero/installation.html).
 
 ### (Optional) `Cvxpy` environment setting
 - this is needed only for constructing and solving the problem with `cvxpy`. 
@@ -73,7 +76,7 @@ Update on May 14: Python 3.8 is not necessary (sometimes even causing problem.) 
 
   `conda install -c conda-forge cvxpy`
 
-  Step 4: install `Mosek`. You need to validate a liscence for using this solver, see the link: https://docs.mosek.com/latest/install/installation.html
+  Step 4: install `Mosek`. You need to validate a license for using this solver, see the link: https://docs.mosek.com/latest/install/installation.html
 
 ### Software versions we use for the results 
 
